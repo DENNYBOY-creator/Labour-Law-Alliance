@@ -71,27 +71,54 @@ export default async function handler(req, res) {
   const html = renderEmail({ ref, re, intro, rows });
   const text = `YOUR REF: ${ref}\nRE: ${re}\n\n${intro}\n\n` + rows.map(([k, v]) => `${k}: ${v || '—'}`).join('\n');
 
-  try {
-    const r = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: CONTACT_FROM,
-        to: CONTACT_TO.split(',').map((s) => s.trim()),
-        reply_to: emailOk ? d.email : undefined,
-        subject,
-        html,
-        text,
-      }),
-    });
-    if (!r.ok) {
-      console.error('Resend error', r.status, await r.text());
-      return res.status(502).json({ error: 'Could not send message.' });
+  // Save the lead in the CRM and email the office at the same time.
+  // The visitor sees success if at least one of the two worked, so no enquiry is lost.
+  const [saved, emailed] = await Promise.all([saveLead(form, ref, d), sendEmail()]);
+  if (!saved && !emailed) return res.status(502).json({ error: 'Could not send message.' });
+  return res.status(200).json({ ok: true });
+
+  async function sendEmail() {
+    try {
+      const r = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: CONTACT_FROM,
+          to: CONTACT_TO.split(',').map((s) => s.trim()),
+          reply_to: emailOk ? d.email : undefined,
+          subject,
+          html,
+          text,
+        }),
+      });
+      if (!r.ok) { console.error('Resend error', r.status, await r.text()); return false; }
+      return true;
+    } catch (err) {
+      console.error('Resend failed', err);
+      return false;
     }
-    return res.status(200).json({ ok: true });
+  }
+}
+
+// ---- CRM (Supabase). The publishable key is public by design: database rules only let it ADD leads, never read them. ----
+const SUPABASE_URL = 'https://ktsvmkfrrxuijmgjdbwr.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_E-C0YA_K3UpDWbbWqS9Lng__7pR26p9';
+const LEAD_FIELDS = ['first_name', 'last_name', 'email', 'phone', 'relationship', 'region', 'service', 'subject', 'message', 'preferred_date', 'preferred_time', 'meeting'];
+
+async function saveLead(form, ref, d) {
+  const lead = { form, ref };
+  for (const k of LEAD_FIELDS) if (d[k]) lead[k] = d[k];
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify(lead),
+    });
+    if (!r.ok) { console.error('Supabase error', r.status, await r.text()); return false; }
+    return true;
   } catch (err) {
-    console.error(err);
-    return res.status(502).json({ error: 'Could not send message.' });
+    console.error('Supabase failed', err);
+    return false;
   }
 }
 
@@ -152,7 +179,7 @@ ${rows.map(([k, v]) => cell(k, v)).join('\n')}
   </table>
 </td></tr>
 <tr><td style="padding:18px 40px;background:#16203b;font-family:${SANS};font-size:12px;line-height:1.6;color:#c9cfdb">
-  Sent from the website form at <a href="https://${FIRM.web}" style="color:#d3a728;text-decoration:none">${FIRM.web}</a>. Reply to this email to respond to the sender directly.
+  Sent from the website form at <a href="https://${FIRM.web}" style="color:#d3a728;text-decoration:none">${FIRM.web}</a>. Reply to this email to respond to the sender directly.<br><a href="${SITE}/admin#lead=${esc(ref)}" style="color:#d3a728;text-decoration:none">Open this lead in the CRM &rarr;</a>
 </td></tr>
 </table>
 </td></tr></table>
