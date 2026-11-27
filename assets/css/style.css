@@ -1,4 +1,4 @@
-/* Labour Law Alliance — static rebuild of the WordPress/Elementor (Tecno theme) site */
+/* Labour Law Alliance - static rebuild of the WordPress/Elementor (Tecno theme) site */
 
 :root{
   --gold:#d3a728;
@@ -431,4 +431,17 @@ a.feature-box{display:block;color:#fff}
 @media (max-width:767px){
   /* header scrolls with the page on phones, so let the open menu expand fully instead of scrolling inside itself */
   .main-nav.open{max-height:3000px;overflow:visible}
+}
+
+/* ---------- Plain styling: no decorative icons, arrows or tick marks ---------- */
+.check-list li{padding-left:20px}
+.check-list li::before{content:"";top:11px;width:6px;height:6px;border-radius:50%;background:var(--gold)}
+.side-services a::after{content:none}
+.steps li{padding-top:22px}
+.feature-head{margin-bottom:10px}
+.service-item h3{margin-top:4px}
+.main-nav .mega-col a{display:block;padding:9px 10px;border-left:2px solid transparent;border-radius:0}
+.main-nav .mega-col a:hover,.main-nav .mega-col a:focus-visible,.main-nav .mega-col a[aria-current="page"]{border-left-color:var(--gold)}
+@media (max-width:991px){
+  .main-nav .mega-col a{padding:10px 20px 10px 24px;border-left:0}
 }
