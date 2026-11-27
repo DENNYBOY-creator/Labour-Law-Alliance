@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://labourlawalliance.co.za/</loc><changefreq>monthly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://labourlawalliance.co.za/services/ccma-representation</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://labourlawalliance.co.za/services/disciplinary-hearings</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://labourlawalliance.co.za/services/employee-relations-management</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://labourlawalliance.co.za/services/hr-employment-contracts</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://labourlawalliance.co.za/services/labour-law-compliance</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://labourlawalliance.co.za/services/restructuring-retrenchments</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://labourlawalliance.co.za/services/trade-union-relations</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
 </urlset>

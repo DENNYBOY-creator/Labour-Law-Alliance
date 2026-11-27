@@ -75,7 +75,19 @@
       <nav class="main-nav" id="mainNav" aria-label="Main menu">
         <ul>
           <li><a href="#about">About Us</a></li>
-          <li><a href="#expertise">Areas of Expertise</a></li>
+          <li class="has-sub">
+            <a href="#expertise" class="sub-parent">Services</a>
+            <button type="button" class="sub-toggle" aria-expanded="false" aria-controls="servicesMenu" aria-label="Show services"><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
+            <ul class="sub-menu" id="servicesMenu">
+              <li><a href="/services/labour-law-compliance">Labour Law &amp; Compliance</a></li>
+              <li><a href="/services/restructuring-retrenchments">Restructuring &amp; Retrenchments</a></li>
+              <li><a href="/services/disciplinary-hearings">Disciplinary Hearings</a></li>
+              <li><a href="/services/ccma-representation">CCMA Representation</a></li>
+              <li><a href="/services/trade-union-relations">Trade Union Relations</a></li>
+              <li><a href="/services/hr-employment-contracts">HR &amp; Employment Contracts</a></li>
+              <li><a href="/services/employee-relations-management">Employee Relations Management</a></li>
+            </ul>
+          </li>
           <li><a href="#appointment">Book Appointment</a></li>
           <li><a href="#contact">Contact Us</a></li>
         </ul>
@@ -127,7 +139,7 @@
 <!-- ============ FEATURE BOXES (overlap hero) ============ -->
 <section class="features">
   <div class="container features-grid">
-    <div class="feature-box">
+    <a class="feature-box" href="/services/disciplinary-hearings">
       <div class="feature-head">
         <span class="feature-icon"><!-- agenda -->
           <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="7" width="26" height="34" rx="2"/><path d="M15 15h14M15 21h14M15 27h9"/><path d="M33 30l7-7 3 3-7 7-4 1z"/></svg>
@@ -135,8 +147,8 @@
         <h3>Disciplinary Hearings</h3>
       </div>
       <p>Fair, professional support for workplace disciplinary processes</p>
-    </div>
-    <div class="feature-box">
+    </a>
+    <a class="feature-box" href="/services/ccma-representation">
       <div class="feature-head">
         <span class="feature-icon"><!-- tools -->
           <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 40l14-14M22 26l4 4M26 30L12 44 4 36l14-14"/><path d="M30 6a8 8 0 0 0-6 12l-2 2 6 6 2-2a8 8 0 0 0 12-6l-5 1-3-3 1-5z"/><path d="M40 40L28 28"/><path d="M8 8l6 2 10 10-4 4-10-10z"/></svg>
@@ -144,8 +156,8 @@
         <h3>CCMA Representation</h3>
       </div>
       <p>Trusted guidance and representation in workplace disputes</p>
-    </div>
-    <div class="feature-box">
+    </a>
+    <a class="feature-box" href="/services/hr-employment-contracts">
       <div class="feature-head">
         <span class="feature-icon"><!-- rocket -->
           <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M28 30l-10-10c4-9 12-15 24-14 1 12-5 20-14 24z"/><circle cx="32" cy="16" r="3.5"/><path d="M18 20l-7 1-5 6 9 1M28 30l-1 7-6 5-1-9"/><path d="M14 34c-3 0-6 3-6 8 5 0 8-3 8-6"/></svg>
@@ -153,7 +165,7 @@
         <h3>Employment Contracts and HR Policies</h3>
       </div>
       <p>Strong workplace foundations start with the right documentation</p>
-    </div>
+    </a>
   </div>
 </section>
 
@@ -191,31 +203,37 @@
         <span class="service-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M28 30l-10-10c4-9 12-15 24-14 1 12-5 20-14 24z"/><circle cx="32" cy="16" r="3.5"/><path d="M18 20l-7 1-5 6 9 1M28 30l-1 7-6 5-1-9"/><path d="M14 34c-3 0-6 3-6 8 5 0 8-3 8-6"/></svg></span>
         <h3>Labour Law &amp; Compliance</h3>
         <p>Ensuring adherence to labour legislation (BCEA, LRA) and managing compliance audits.</p>
+        <a class="service-link" href="/services/labour-law-compliance">Learn more <span aria-hidden="true">&rarr;</span></a>
       </div>
       <div class="service-item">
         <span class="service-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M30 6a8 8 0 0 0-6 12L8 34a4 4 0 0 0 6 6l16-16a8 8 0 0 0 12-6l-5 1-3-3 1-5z"/><path d="M8 8l4 2 12 12-2 2L10 12z"/><path d="M28 28l12 12-4 4-12-12"/></svg></span>
         <h3>Restructuring &amp; Retrenchments</h3>
         <p>Managing the legal requirements of restructuring and retrenchment processes.</p>
+        <a class="service-link" href="/services/restructuring-retrenchments">Learn more <span aria-hidden="true">&rarr;</span></a>
       </div>
       <div class="service-item">
         <span class="service-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6L4 16l20 10 20-10z"/><path d="M4 24l20 10 20-10"/><path d="M4 32l20 10 20-10"/></svg></span>
         <h3>Disciplinary &amp; Dispute Resolution</h3>
         <p>Chairing disciplinary hearings, offering CCMA representation, and facilitating dispute resolution.</p>
+        <span class="service-links"><a class="service-link" href="/services/disciplinary-hearings">Disciplinary Hearings <span aria-hidden="true">&rarr;</span></a><a class="service-link" href="/services/ccma-representation">CCMA Representation <span aria-hidden="true">&rarr;</span></a></span>
       </div>
       <div class="service-item">
         <span class="service-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="13" r="5"/><circle cx="11" cy="17" r="4"/><circle cx="37" cy="17" r="4"/><path d="M15 40V28a9 9 0 0 1 18 0v12M4 36v-6a7 7 0 0 1 9-6.7M44 36v-6a7 7 0 0 0-9-6.7"/><path d="M4 40h40"/></svg></span>
         <h3>Trade Union Relations</h3>
         <p>Handling collective bargaining, wage negotiations, and union interface.</p>
+        <a class="service-link" href="/services/trade-union-relations">Learn more <span aria-hidden="true">&rarr;</span></a>
       </div>
       <div class="service-item">
         <span class="service-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M34 6l8 8-24 24-10 2 2-10z"/><path d="M29 11l8 8M10 30l8 8"/></svg></span>
         <h3>HR and Employment Contracts</h3>
         <p>Drafting employment contracts, developing HR policies, and managing workplace procedures.</p>
+        <a class="service-link" href="/services/hr-employment-contracts">Learn more <span aria-hidden="true">&rarr;</span></a>
       </div>
       <div class="service-item">
         <span class="service-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 40l14-14M26 30L12 44 4 36l14-14 8 8z"/><path d="M30 6a8 8 0 0 0-6 12l-2 2 6 6 2-2a8 8 0 0 0 12-6l-5 1-3-3 1-5z"/><path d="M40 40L28 28"/></svg></span>
         <h3>Employee Relations Management</h3>
         <p>Fostering a positive work environment, handling grievances, and managing staff relations.</p>
+        <a class="service-link" href="/services/employee-relations-management">Learn more <span aria-hidden="true">&rarr;</span></a>
       </div>
     </div>
   </div>
