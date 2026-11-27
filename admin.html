@@ -28,6 +28,8 @@ textarea{min-height:120px;resize:vertical}
 .btn.full{width:100%;margin-top:18px}
 .msg{margin-top:12px;font-size:13px;color:#b42318;min-height:1em}
 .msg.ok{color:#067647}
+.hint{font-size:12px;color:var(--muted);margin:10px 0 0;text-align:center}
+.btn.full+.btn.full{margin-top:10px}
 header.top{background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 20px;gap:12px}
 header.top img{height:40px;background:#fff;border-radius:6px;padding:3px 6px}
 header.top .who{display:flex;align-items:center;gap:12px;font-size:13px;color:#c9cfdb}
@@ -84,8 +86,10 @@ dd{margin:0;white-space:pre-wrap;word-break:break-word}
       <label for="email">Email</label>
       <input id="email" type="email" autocomplete="username" required>
       <label for="password">Password</label>
-      <input id="password" type="password" autocomplete="current-password" required>
+      <input id="password" type="password" autocomplete="current-password">
       <button class="btn full" type="submit">Sign in</button>
+      <button class="btn ghost full" type="button" id="magic">Email me a sign-in link</button>
+      <p class="hint">First time, or forgot your password? Enter your email and use the sign-in link.</p>
       <p class="msg" id="login-msg" role="alert"></p>
     </form>
   </div>
@@ -94,7 +98,7 @@ dd{margin:0;white-space:pre-wrap;word-break:break-word}
 <section id="app" class="hidden">
   <header class="top">
     <img src="/assets/images/logo.png?v=2" alt="Labour Law Alliance">
-    <div class="who"><span id="who"></span><button class="btn ghost" id="refresh" type="button">Refresh</button><button class="btn ghost" id="logout" type="button">Sign out</button></div>
+    <div class="who"><span id="who"></span><button class="btn ghost" id="refresh" type="button">Refresh</button><button class="btn ghost" id="setpw" type="button">Set password</button><button class="btn ghost" id="logout" type="button">Sign out</button></div>
   </header>
   <main>
     <div class="stats" id="stats"></div>
@@ -163,6 +167,7 @@ dd{margin:0;white-space:pre-wrap;word-break:break-word}
       $('login-msg').textContent = 'This account is not on the staff list. Ask the administrator to add you.';
       return show('login');
     }
+    sb.rpc('link_staff');
     $('who').textContent = res.data.session.user.email;
     show('app');
     await load();
@@ -224,12 +229,29 @@ dd{margin:0;white-space:pre-wrap;word-break:break-word}
 
   $('login-form').addEventListener('submit', async function (e) {
     e.preventDefault();
-    var btn = e.target.querySelector('button'); btn.disabled = true; $('login-msg').textContent = '';
+    if (!$('password').value) { $('login-msg').className = 'msg'; $('login-msg').textContent = 'Enter your password, or use the sign-in link.'; return; }
+    var btn = e.target.querySelector('button'); btn.disabled = true; $('login-msg').className = 'msg'; $('login-msg').textContent = '';
     var r = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
     btn.disabled = false;
     if (r.error) { $('login-msg').textContent = 'Sign in failed: ' + r.error.message; return; }
     $('password').value = '';
     start();
+  });
+  $('magic').addEventListener('click', async function () {
+    var email = $('email').value.trim();
+    if (!email) { $('login-msg').className = 'msg'; $('login-msg').textContent = 'Enter your email first.'; return; }
+    this.disabled = true;
+    var r = await sb.auth.signInWithOtp({ email: email, options: { emailRedirectTo: location.origin + '/admin' } });
+    this.disabled = false;
+    if (r.error) { $('login-msg').className = 'msg'; $('login-msg').textContent = 'Could not send link: ' + r.error.message; return; }
+    $('login-msg').className = 'msg ok'; $('login-msg').textContent = 'Check ' + email + ' for your sign-in link.';
+  });
+  $('setpw').addEventListener('click', async function () {
+    var pw = prompt('Choose a new password (at least 8 characters):');
+    if (!pw) return;
+    if (pw.length < 8) { alert('Password must be at least 8 characters.'); return; }
+    var r = await sb.auth.updateUser({ password: pw });
+    alert(r.error ? 'Could not set password: ' + r.error.message : 'Password saved. Next time you can sign in with your email and password.');
   });
   $('logout').addEventListener('click', async function () { await sb.auth.signOut(); leads = []; show('login'); });
   $('refresh').addEventListener('click', load);
