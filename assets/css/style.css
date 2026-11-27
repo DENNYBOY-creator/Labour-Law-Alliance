@@ -383,7 +383,52 @@ a.feature-box{display:block;color:#fff}
   .faq summary{font-size:17px}
 }
 
-/* ---------- Two-column services dropdown (14 services) ---------- */
-@media (min-width:992px){
-  .main-nav .sub-menu{display:grid;grid-template-columns:repeat(2,minmax(250px,1fr));min-width:560px;column-gap:4px;left:-120px;grid-template-rows:repeat(7,auto);grid-auto-flow:column}
+/* =====================================================================
+   Services mega menu
+   ===================================================================== */
+.main-nav .has-mega{position:static}
+.mega{position:absolute;left:0;right:0;top:100%;z-index:100;background:#fff;border-top:3px solid var(--gold);box-shadow:0 22px 44px rgba(0,0,0,.2);opacity:0;visibility:hidden;transform:translateY(10px);transition:opacity .2s ease .25s,transform .2s ease .25s,visibility 0s linear .45s}
+.has-mega:hover>.mega,.has-mega:focus-within>.mega,.has-mega.open>.mega{opacity:1;visibility:visible;transform:none;transition-delay:0s}
+.main-nav .mega ul{display:block}
+.mega-grid{max-width:1170px;margin:0 auto;padding:28px 15px 20px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:26px}
+.mega-title{font-family:var(--heading);font-size:13px;font-weight:700;letter-spacing:.09em;line-height:18px;text-transform:uppercase;color:var(--gold);margin:0 0 8px;padding:0 10px 10px;border-bottom:1px solid #eef0f3}
+.main-nav .mega-col a{display:flex;align-items:flex-start;gap:12px;padding:10px;border-radius:4px;color:var(--dark);font-size:16px;line-height:20px;text-transform:none}
+.main-nav .mega-col a:hover,.main-nav .mega-col a:focus-visible,.main-nav .mega-col a[aria-current="page"]{background:#fbf7ea;color:var(--dark)}
+.mega-icon{flex:none;width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:4px;background:#fbf2d6;color:var(--gold);transition:.25s}
+.mega-icon svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.main-nav .mega-col a:hover .mega-icon,.main-nav .mega-col a[aria-current="page"] .mega-icon{background:var(--gold);color:#fff}
+.mega-text{display:block;min-width:0}
+.mega-label{display:block;font-family:var(--heading);font-size:16px;font-weight:600;line-height:20px;color:var(--dark)}
+.main-nav .mega-col a:hover .mega-label,.main-nav .mega-col a[aria-current="page"] .mega-label{color:var(--gold)}
+.mega-desc{display:block;margin-top:3px;font-family:var(--body);font-size:12.5px;font-weight:400;line-height:18px;color:var(--text)}
+.mega-cta{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px max(15px,calc((100% - 1170px) / 2 + 25px));background:var(--navy)}
+.mega-cta p{margin:0;font-size:14.5px;line-height:22px;color:rgba(255,255,255,.82)}
+.mega-cta strong{color:#fff}
+.mega-cta-actions{display:flex;gap:12px;flex:none}
+.main-nav .mega-cta a{display:inline-block;padding:11px 18px;border-radius:2px;font-size:15px;line-height:18px;text-transform:none}
+.main-nav .mega-call{border:1px solid rgba(255,255,255,.55);color:#fff}
+.main-nav .mega-call:hover{background:#fff;color:var(--navy)}
+.main-nav .mega-book{background:var(--gold);color:#fff}
+.main-nav .mega-book:hover{background:#fff;color:var(--navy)}
+
+@media (max-width:991px){
+  .mega{position:static;display:none;flex-basis:100%;opacity:1;visibility:visible;transform:none;transition:none;box-shadow:none;border-top:0;background:rgba(255,255,255,.04)}
+  .has-mega.open>.mega{display:block}
+  .mega-grid{display:block;padding:4px 0}
+  .mega-col{padding:4px 0}
+  .mega-title{padding:12px 20px 4px;margin:0;border-bottom:0;font-size:11.5px}
+  .main-nav .mega-col a{align-items:center;padding:8px 20px 8px 22px;border-radius:0;border-bottom:0;color:#fff}
+  .main-nav .mega-col a:hover,.main-nav .mega-col a[aria-current="page"]{background:rgba(255,255,255,.07)}
+  .mega-icon{width:30px;height:30px;background:rgba(211,167,40,.16)}
+  .mega-icon svg{width:18px;height:18px}
+  .mega-label{font-size:15.5px;color:#fff}
+  .mega-desc{display:none}
+  .mega-cta{display:block;padding:14px 20px 16px;background:rgba(0,0,0,.22)}
+  .mega-cta p{font-size:13.5px;margin-bottom:10px}
+  .mega-cta-actions{flex-wrap:wrap;gap:10px}
+  .main-nav .mega-cta a{border-bottom:0;padding:10px 16px}
+}
+@media (max-width:767px){
+  /* header scrolls with the page on phones, so let the open menu expand fully instead of scrolling inside itself */
+  .main-nav.open{max-height:3000px;overflow:visible}
 }
