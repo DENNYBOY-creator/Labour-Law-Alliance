@@ -4,7 +4,7 @@
 //   CONTACT_TO       where submissions go, e.g. info@labourlawalliance.co.za
 //   CONTACT_FROM     a sender on a domain you verified in Resend, e.g. "Labour Law Alliance <website@labourlawalliance.co.za>"
 
-const LIMITS = { first_name: 100, last_name: 100, email: 200, phone: 50, relationship: 20, region: 150, subject: 200, message: 5000 };
+const LIMITS = { first_name: 100, last_name: 100, email: 200, phone: 50, relationship: 20, region: 150, subject: 200, message: 5000, preferred_date: 60, preferred_time: 20, service: 150, meeting: 40 };
 
 const esc = (s) => String(s || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const clean = (v, max) => String(v ?? '').trim().slice(0, max);
@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   // Honeypot: bots fill the hidden "website" field. Pretend success.
   if (body.website) return res.status(200).json({ ok: true });
 
-  const form = body.form === 'enquiry' ? 'enquiry' : 'contact';
+  const form = ['enquiry', 'booking'].includes(body.form) ? body.form : 'contact';
   const d = {};
   for (const [k, max] of Object.entries(LIMITS)) d[k] = clean(body[k], max);
 
@@ -30,6 +30,10 @@ export default async function handler(req, res) {
   if (form === 'contact') {
     if (!d.first_name || !d.last_name || !d.subject || !d.message || !emailOk) {
       return res.status(400).json({ error: 'Please complete all required fields.' });
+    }
+  } else if (form === 'booking') {
+    if (!d.first_name || !d.last_name || !emailOk || !d.phone || !d.preferred_date || !d.preferred_time) {
+      return res.status(400).json({ error: 'Please choose a date and time and complete all required fields.' });
     }
   } else if (d.email && !emailOk) {
     return res.status(400).json({ error: 'Please enter a valid email address.' });
@@ -44,15 +48,19 @@ export default async function handler(req, res) {
   }
 
   const name = `${d.first_name} ${d.last_name}`.trim() || 'Website visitor';
-  const subject = form === 'enquiry'
+  const subject = form === 'booking'
+    ? `Appointment request – ${name} – ${d.preferred_date} ${d.preferred_time}`
+    : form === 'enquiry'
     ? `New consultation enquiry – ${name}`
     : `Website contact: ${d.subject}`;
 
-  const rows = form === 'enquiry'
+  const rows = form === 'booking'
+    ? [['Name', name], ['Email', d.email], ['Phone', d.phone], ['Preferred date', d.preferred_date], ['Preferred time', d.preferred_time], ['Meeting type', d.meeting], ['Service', d.service], ['Relationship to Matter', d.relationship], ['Message', d.message]]
+    : form === 'enquiry'
     ? [['Name', name], ['Email', d.email], ['Phone', d.phone], ['Relationship to Matter', d.relationship], ['Region/Location', d.region], ['Nature of Request/Message', d.message]]
     : [['Name', name], ['Email', d.email], ['Subject', d.subject], ['Message', d.message]];
 
-  const html = `<h2 style="font-family:Arial,sans-serif">${esc(form === 'enquiry' ? 'Enquiry Form' : 'Contact Us')} – labourlawalliance.co.za</h2>
+  const html = `<h2 style="font-family:Arial,sans-serif">${esc(form === 'booking' ? 'Appointment Request' : form === 'enquiry' ? 'Enquiry Form' : 'Contact Us')} – labourlawalliance.co.za</h2>
 <table cellpadding="8" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px">
 ${rows.map(([k, v]) => `<tr><td style="border:1px solid #ddd;background:#f7f7f7;font-weight:bold;vertical-align:top">${esc(k)}</td><td style="border:1px solid #ddd;white-space:pre-wrap">${esc(v) || '—'}</td></tr>`).join('\n')}
 </table>`;
