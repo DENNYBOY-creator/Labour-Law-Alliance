@@ -445,3 +445,28 @@ a.feature-box{display:block;color:#fff}
 @media (max-width:991px){
   .main-nav .mega-col a{padding:10px 20px 10px 24px;border-left:0}
 }
+
+/* ---------- Header shows only logo + menu (contact bar moved to footer) ---------- */
+.header-bottom{top:0}
+.slide .container{padding-top:206px}
+.page-hero{padding-top:236px}
+
+/* ---------- Footer contact, hours and social ---------- */
+.footer-info{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;padding-bottom:40px}
+.footer-col h3{font-size:20px;line-height:24px;color:#fff;margin:0 0 14px}
+.footer-col p{margin:0 0 6px;font-size:15px;line-height:26px;color:#fff}
+.footer-label{color:var(--navy);font-weight:600;margin-right:4px}
+.footer-col a{color:#fff;border-bottom:1px solid rgba(255,255,255,.45)}
+.footer-col a:hover{color:var(--navy);border-bottom-color:var(--navy)}
+.site-footer{padding-top:60px}
+.footer-copyright{border-top-color:rgba(255,255,255,.35)}
+
+@media (max-width:991px){
+  .page-hero{padding-top:151px}
+}
+@media (max-width:767px){
+  .slide .container{padding-top:60px}
+  .page-hero{padding-top:50px}
+  .footer-info{grid-template-columns:1fr;gap:24px}
+  .site-footer{padding-top:45px}
+}
