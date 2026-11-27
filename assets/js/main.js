@@ -172,7 +172,7 @@
         })
         .catch(function () {
           msg.className = 'frm-message err';
-          msg.innerHTML = 'Sorry, your message could not be sent. Please email us at <a href="mailto:info@labourlawalliance.co.za">info@labourlawalliance.co.za</a> or call <a href="tel:+27112195025">011 219 5025</a>.';
+          msg.innerHTML = 'Sorry, your message could not be sent. Please email us at <a href="mailto:info@labourlawalliance.co.za">info@labourlawalliance.co.za</a> or call <a href="tel:+27697711060">069 771 1060</a>.';
         })
         .finally(function () { btn.disabled = false; btn.textContent = label; });
     });
