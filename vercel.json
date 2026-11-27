@@ -4,6 +4,12 @@
   "trailingSlash": false,
   "redirects": [
     {
+      "source": "/((?!api/).*)",
+      "has": [{ "type": "host", "value": "labour-kappa.vercel.app" }],
+      "destination": "https://labourlawalliance.co.za/$1",
+      "permanent": true
+    },
+    {
       "source": "/wp-admin/:path*",
       "destination": "/",
       "permanent": true
