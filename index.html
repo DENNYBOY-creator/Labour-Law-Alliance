@@ -36,7 +36,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Josefin+Sans:wght@400;500;600;700&family=Open+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/assets/css/style.css?v=8">
+<link rel="stylesheet" href="/assets/css/style.css?v=9">
 
 <!-- Google tag (consent-gated: analytics only runs after the visitor accepts cookies) -->
 <script>
@@ -61,7 +61,7 @@
       </button>
       <nav class="main-nav" id="mainNav" aria-label="Main menu">
         <ul>
-          <li><a href="#about">About Us</a></li>
+          <li><a href="/about">About Us</a></li>
           <li class="has-sub has-mega">
             <a href="#expertise" class="sub-parent">Services</a>
             <button type="button" class="sub-toggle" aria-expanded="false" aria-controls="servicesMenu" aria-label="Show services"><svg viewBox="0 0 10 6" width="10" height="6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>
@@ -106,13 +106,13 @@
                 <p><strong>Not sure which service you need?</strong> Talk to our team for clear, practical advice.</p>
                 <div class="mega-cta-actions">
                   <a class="mega-call" href="tel:+27112195025">Call 011 219 5025</a>
-                  <a class="mega-book" href="#appointment">Book a Consultation</a>
+                  <a class="mega-book" href="/book">Book a Consultation</a>
                 </div>
               </div>
             </div>
           </li>
-          <li><a href="#appointment">Book Appointment</a></li>
-          <li><a href="#contact">Contact Us</a></li>
+          <li><a href="/book">Book Appointment</a></li>
+          <li><a href="/contact">Contact Us</a></li>
         </ul>
       </nav>
     </div>
@@ -146,7 +146,7 @@
           <p class="slide-title">CCMA Representation and Workplace Disputes</p>
           <p class="slide-text">We assist clients in Randburg and Fourways with CCMA representation, dispute resolution and workplace conflict management. Whether the matter involves unfair dismissal, misconduct, poor work performance, retrenchment disputes or unfair labour practices, we help prepare your case and guide you through the correct process.</p>
           <div class="slide-actions">
-            <a class="blob-btn" href="#appointment">Book a Consultation</a>
+            <a class="blob-btn" href="/book">Book a Consultation</a>
             <span class="slider-video" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 8.2v7.6l6-3.8z" fill="currentColor"/></svg></span>
           </div>
         </div>
@@ -191,7 +191,7 @@
       <h4>About Us</h4>
       <h2>Practical Labour Law Solutions for Modern Workplaces</h2>
       <p>Labour Law Alliance provides expert guidance on industrial relations, employment law compliance, and human resources to help businesses minimize risk and manage staff effectively. Our Services typically include CCMA representation for both employees and employers chairing disciplinary hearings, drafting contracts, and managing retrenchments. We ensure legal compliance and foster productive, harmonious work environments.</p>
-      <a class="btn btn-gold" href="#appointment">Book Appointment</a>
+      <div class="about-actions"><a class="btn btn-gold" href="/book">Book Appointment</a> <a class="btn btn-outline-dark" href="/about">More About Us</a></div>
     </div>
   </div>
 </section>
@@ -247,76 +247,26 @@
   </div>
 </section>
 
-<!-- ============ APPOINTMENT / ENQUIRY FORM ============ -->
-<section class="appointment" id="appointment">
+<!-- ============ NEXT STEPS ============ -->
+<section class="next-steps" id="appointment">
   <div class="container">
     <div class="section-title">
-      <span>Schedule a Consultation</span>
-      <h2>Need legal direction? Book your consultation today.</h2>
+      <span>Get In Touch</span>
+      <h2>Need legal direction? We are here to help.</h2>
     </div>
-
-    <form class="frm-form js-form" data-form="enquiry" novalidate>
-      <fieldset>
-        <legend class="sr-only">Enquiry Form</legend>
-        <h3 class="frm-section-title">Contact Information</h3>
-
-        <div class="frm-field">
-          <div class="frm-label">Name</div>
-          <div class="frm-row">
-            <div>
-              <label class="sr-only" for="enq_first">First Name</label>
-              <input type="text" id="enq_first" name="first_name" autocomplete="given-name">
-              <div class="frm-desc">First Name</div>
-            </div>
-            <div>
-              <label class="sr-only" for="enq_last">Last Name</label>
-              <input type="text" id="enq_last" name="last_name" autocomplete="family-name">
-              <div class="frm-desc">Last Name</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="frm-field">
-          <label class="frm-label" for="enq_email">Email</label>
-          <input type="email" id="enq_email" name="email" autocomplete="email">
-        </div>
-
-        <div class="frm-field">
-          <label class="frm-label" for="enq_phone">Phone</label>
-          <input type="tel" id="enq_phone" name="phone" autocomplete="tel">
-        </div>
-
-        <div class="frm-field">
-          <label class="frm-label" for="enq_rel">Relationship to Matter</label>
-          <select id="enq_rel" name="relationship">
-            <option value="Employer">Employer</option>
-            <option value="Employee">Employee</option>
-          </select>
-        </div>
-
-        <div class="frm-field">
-          <label class="frm-label" for="enq_region">Region/Location</label>
-          <input type="text" id="enq_region" name="region">
-          <div class="frm-desc">Important for local legislation compliance (e.g., Gauteng, Cape Town).</div>
-        </div>
-
-        <div class="frm-field">
-          <label class="frm-label" for="enq_msg">Nature of Request/Message</label>
-          <textarea id="enq_msg" name="message" rows="5"></textarea>
-        </div>
-
-        <!-- honeypot (spam check) -->
-        <div class="hp-field" aria-hidden="true">
-          <label for="enq_hp">If you are human, leave this field blank.</label>
-          <input type="text" id="enq_hp" name="website" tabindex="-1" autocomplete="off">
-        </div>
-
-        <div class="frm-submit">
-          <button type="submit" class="frm-button">Submit</button>
-        </div>
-        <div class="frm-message" role="status" aria-live="polite"></div>
-      </fieldset>
-    </form>
+    <div class="next-grid" id="contact">
+      <div class="next-card">
+        <h3>Book a Consultation</h3>
+        <p>Choose a date and time online for an in-person, phone or video appointment. We will contact you to confirm.</p>
+        <a class="btn btn-gold" href="/book">Book an Appointment</a>
+      </div>
+      <div class="next-card">
+        <h3>Contact Us</h3>
+        <p>Prism Business Park, Ruby Cl, Fourways, Johannesburg, 2191<br>
+        <a href="tel:+27112195025">011 219 5025</a> &middot; <a href="mailto:info@labourlawalliance.co.za">info@labourlawalliance.co.za</a></p>
+        <a class="btn btn-outline-dark" href="/contact">Contact Page</a>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -329,83 +279,6 @@
   </div>
 </section>
 
-<!-- ============ CONTACT ============ -->
-<section class="contact" id="contact">
-  <div class="container">
-    <div class="section-title">
-      <span>Contact Us</span>
-      <h2>Contact Details</h2>
-    </div>
-
-    <div class="contact-grid">
-      <div class="contact-info">
-        <p class="contact-intro">Contact Labour Law Alliance today to discuss your labour law matter in Randburg, Fourways or surrounding Johannesburg areas. We are committed to helping employers and employees resolve workplace legal matters with clarity and confidence.</p>
-
-        <div class="info-box">
-          <span class="info-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 4a12 12 0 0 0-12 12c0 9 12 22 12 22s12-13 12-22A12 12 0 0 0 24 4z"/><circle cx="24" cy="16" r="4.5"/><path d="M14 32l-10 4 0 8 10-4 20 4 10-4v-8l-10 4"/></svg></span>
-          <div>
-            <h3>Company Address</h3>
-            <p>Prism Business Park, Ruby Cl, Fourways, Johannesburg, 2191</p>
-          </div>
-        </div>
-        <div class="info-box">
-          <span class="info-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="4" y="10" width="40" height="28" rx="1"/><path d="M4 11l20 16 20-16M4 37l15-14M44 37L29 23"/></svg></span>
-          <div>
-            <h3>E-Mail Us</h3>
-            <p><a href="mailto:info@labourlawalliance.co.za">info@labourlawalliance.co.za</a></p>
-          </div>
-        </div>
-        <div class="info-box">
-          <span class="info-icon"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M14 5l6 9-4 4c2 6 8 12 14 14l4-4 9 6-3 7C26 41 7 22 7 8z"/><path d="M28 6a14 14 0 0 1 14 14M28 13a7 7 0 0 1 7 7"/></svg></span>
-          <div>
-            <h3>Contact Us</h3>
-            <p><a href="tel:+27112195025">011 219 5025</a></p>
-          </div>
-        </div>
-      </div>
-
-      <form class="frm-form js-form" data-form="contact" novalidate>
-        <fieldset>
-          <legend class="sr-only">Contact Us</legend>
-          <div class="frm-row">
-            <div class="frm-field">
-              <label class="frm-label" for="c_first">Name <span class="req">*</span></label>
-              <input type="text" id="c_first" name="first_name" required autocomplete="given-name">
-              <div class="frm-desc">First</div>
-            </div>
-            <div class="frm-field">
-              <label class="frm-label frm-label-hidden" for="c_last">Last <span class="req">*</span></label>
-              <input type="text" id="c_last" name="last_name" required autocomplete="family-name">
-              <div class="frm-desc">Last</div>
-            </div>
-          </div>
-          <div class="frm-field">
-            <label class="frm-label" for="c_email">Email <span class="req">*</span></label>
-            <input type="email" id="c_email" name="email" required autocomplete="email">
-          </div>
-          <div class="frm-field">
-            <label class="frm-label" for="c_subject">Subject <span class="req">*</span></label>
-            <input type="text" id="c_subject" name="subject" required>
-          </div>
-          <div class="frm-field">
-            <label class="frm-label" for="c_msg">Message <span class="req">*</span></label>
-            <textarea id="c_msg" name="message" rows="5" required></textarea>
-          </div>
-
-          <div class="hp-field" aria-hidden="true">
-            <label for="c_hp">If you are human, leave this field blank.</label>
-            <input type="text" id="c_hp" name="website" tabindex="-1" autocomplete="off">
-          </div>
-
-          <div class="frm-submit">
-            <button type="submit" class="frm-button">Submit</button>
-          </div>
-          <div class="frm-message" role="status" aria-live="polite"></div>
-        </fieldset>
-      </form>
-    </div>
-  </div>
-</section>
 
 </main>
 
@@ -413,6 +286,14 @@
 <footer class="site-footer">
   <div class="container">
     <div class="footer-info">
+      <div class="footer-col">
+        <h3>Pages</h3>
+        <p><a href="/">Home</a></p>
+        <p><a href="/about">About Us</a></p>
+        <p><a href="/#expertise">Services</a></p>
+        <p><a href="/book">Book Appointment</a></p>
+        <p><a href="/contact">Contact Us</a></p>
+      </div>
       <div class="footer-col">
         <h3>Contact Us</h3>
         <p><span class="footer-label">Email</span> <a href="mailto:info@labourlawalliance.co.za">info@labourlawalliance.co.za</a></p>
