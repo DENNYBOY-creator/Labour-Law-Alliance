@@ -123,7 +123,7 @@ async function saveLead(form, ref, d) {
 }
 
 // ---- Branded email layout (table-based with inline styles so it renders the same in Gmail and Outlook) ----
-const SITE = 'https://labour-kappa.vercel.app';
+const SITE = 'https://labourlawalliance.co.za';
 const FIRM = {
   logo: `${SITE}/assets/images/logo.png?v=2`,
   addr1: 'Prism Business Park, Ruby Cl',
