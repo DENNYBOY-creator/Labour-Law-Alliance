@@ -101,7 +101,8 @@ const FIRM = {
   logo: `${SITE}/assets/images/logo.png?v=2`,
   addr1: 'Prism Business Park, Ruby Cl',
   addr2: 'Fourways, Johannesburg, 2191',
-  phone: '011 219 5025', tel: '+27112195025',
+  phone: '069 771 1060', tel: '+27697711060',
+  wa: '068 008 9790', waLink: 'https://wa.me/27680089790',
   email: 'info@labourlawalliance.co.za',
   web: 'labourlawalliance.co.za',
 };
@@ -131,7 +132,8 @@ function renderEmail({ ref, re, intro, rows }) {
     <td valign="middle" align="left" width="45%" style="padding-right:12px"><a href="https://${FIRM.web}"><img src="${FIRM.logo}" width="170" alt="Labour Law Alliance" style="display:block;width:170px;height:auto;border:0"></a></td>
     <td valign="middle" align="right" style="font-family:${SANS};font-size:13px;line-height:1.6;color:#444">
       ${FIRM.addr1}<br>${FIRM.addr2}<br>
-      <a href="tel:${FIRM.tel}" style="color:#444;text-decoration:none">${FIRM.phone}</a><br><a href="mailto:${FIRM.email}" style="color:#444;text-decoration:none">${FIRM.email}</a>
+      <a href="tel:${FIRM.tel}" style="color:#444;text-decoration:none">${FIRM.phone}</a> (calls)<br>
+      <a href="${FIRM.waLink}" style="color:#444;text-decoration:none">${FIRM.wa}</a> (WhatsApp)<br><a href="mailto:${FIRM.email}" style="color:#444;text-decoration:none">${FIRM.email}</a>
     </td>
   </tr></table>
 </td></tr>
