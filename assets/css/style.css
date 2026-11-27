@@ -382,3 +382,8 @@ a.feature-box{display:block;color:#fff}
   .check-list,.audience-grid,.steps,.service-side{grid-template-columns:1fr}
   .faq summary{font-size:17px}
 }
+
+/* ---------- Two-column services dropdown (14 services) ---------- */
+@media (min-width:992px){
+  .main-nav .sub-menu{display:grid;grid-template-columns:repeat(2,minmax(250px,1fr));min-width:560px;column-gap:4px;left:-120px;grid-template-rows:repeat(7,auto);grid-auto-flow:column}
+}
