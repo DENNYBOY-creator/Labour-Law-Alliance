@@ -1,0 +1,12 @@
+{
+  "name": "labourlawalliance",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Labour Law Alliance website — static site + Vercel form function",
+  "scripts": {
+    "fetch-images": "node scripts/fetch-images.mjs",
+    "dev": "vercel dev"
+  },
+  "engines": { "node": ">=18" }
+}
