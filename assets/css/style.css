@@ -514,3 +514,95 @@ a.feature-box{display:block;color:#fff}
   .main-nav .mega ul{background:transparent;margin:0}
   .mega{background:rgba(255,255,255,.03)}
 }
+
+/* =====================================================================
+   Multi-page: About, Book, Contact, home next steps, 4-column footer
+   ===================================================================== */
+.main-nav>ul>li>a[aria-current="page"]{opacity:1;text-decoration:underline;text-underline-offset:6px;text-decoration-thickness:1px}
+.btn-outline-dark{border:1px solid var(--dark);color:var(--dark);padding:17px 22px}
+.btn-outline-dark:hover{background:var(--dark);color:#fff}
+.text-link{color:var(--dark);border-bottom:1px solid currentColor}
+.text-link:hover{color:var(--gold)}
+.footer-info{grid-template-columns:repeat(4,1fr)}
+
+/* home: next steps */
+.next-steps{padding:60px 0 40px}
+.next-grid{display:grid;grid-template-columns:1fr 1fr;gap:30px}
+.next-card{border:1px solid #e6e8ec;padding:34px 30px}
+.next-card h3{font-size:24px;line-height:30px}
+.next-card p{color:#4f5a66}
+.next-card p a{color:var(--dark);border-bottom:1px solid #c9ced6}
+.next-card p a:hover{color:var(--gold)}
+.next-card .btn{margin-top:8px}
+.about-actions{display:flex;flex-wrap:wrap;gap:12px}
+
+/* about page */
+.about-page{padding-top:80px}
+.about-page .about-text p{margin-bottom:18px}
+.about-page .about-text .btn{margin-top:10px}
+.about-section{padding:50px 0}
+.about-who .audience-grid{max-width:1000px;margin:0 auto}
+.approach-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:30px}
+.approach-item{border-top:2px solid var(--gold);padding-top:20px}
+.approach-item h3{font-size:21px;line-height:26px}
+.approach-item p{color:#4f5a66;margin:0}
+.about-services{background:#f7f8fa}
+.about-groups{display:grid;grid-template-columns:repeat(4,1fr);gap:30px}
+.about-group h3{font-size:18px;line-height:24px;padding-bottom:10px;border-bottom:1px solid #dfe3e8}
+.about-group li{padding:6px 0}
+.about-group a{color:#3d4752}
+.about-group a:hover{color:var(--gold)}
+
+/* booking page */
+.booking{padding:70px 0 60px}
+.booking-intro{max-width:780px;margin:0 auto 40px;text-align:center}
+.booking-intro h2{font-size:36px;line-height:44px}
+.booking-intro p{color:#4f5a66}
+.booking-grid{max-width:none;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:50px;align-items:start}
+.booking-step{font-family:var(--heading);font-size:20px;line-height:26px;color:#000;margin:0 0 14px;padding:0}
+.booking-details{border:0;margin:0;padding:0;min-width:0}
+.calendar{border:1px solid #e3e6ea;border-radius:8px;padding:18px;margin-bottom:30px;background:#fff}
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.cal-month{margin:0;font-family:var(--heading);font-size:18px;font-weight:600;color:#111}
+.cal-nav{width:38px;height:38px;border:1px solid #d6dae0;border-radius:6px;background:#fff;font-size:22px;line-height:1;color:#333}
+.cal-nav:hover:not(:disabled){background:#f3f4f6}
+.cal-nav:disabled{opacity:.35;cursor:default}
+.cal-weekdays,.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.cal-weekdays span{text-align:center;font-size:12px;font-weight:600;letter-spacing:.04em;color:#6b7280;padding:4px 0}
+.cal-day{height:44px;border:1px solid #e3e6ea;border-radius:6px;background:#fff;font-family:inherit;font-size:15px;color:#1f2937;transition:background .15s,border-color .15s}
+.cal-day:hover:not(:disabled){border-color:var(--dark);background:#f7f8fa}
+.cal-day:disabled{background:#f6f7f8;color:#b6bcc4;border-color:#f0f1f3;cursor:not-allowed}
+.cal-day.is-today{font-weight:700}
+.cal-day.is-selected{background:var(--dark);border-color:var(--dark);color:#fff}
+.time-slots{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px}
+.time-hint{grid-column:1/-1;margin:0;color:#6b7280;font-size:14px}
+.time-slot{height:44px;border:1px solid #d6dae0;border-radius:6px;background:#fff;font-family:inherit;font-size:15px;color:#1f2937}
+.time-slot:hover{border-color:var(--dark);background:#f7f8fa}
+.time-slot.is-selected{background:var(--dark);border-color:var(--dark);color:#fff}
+.booking-summary{padding:14px 16px;border-radius:6px;background:#f7f8fa;color:#4b5563;font-size:14.5px;margin:0}
+.booking-summary.is-ready{background:#fbf7ea;color:#1f2937}
+.booking-submit{padding:11px 22px;font-size:15px}
+.booking-note{font-size:13.5px;color:#6b7280;margin-top:14px}
+.booking-note a{color:var(--dark);border-bottom:1px solid currentColor}
+
+/* contact page */
+.contact-page{padding:80px 0 60px}
+.contact-form-title{font-family:var(--heading);font-size:22px;color:#000;margin-bottom:18px;padding:0}
+.contact-hours{margin-top:10px;padding-top:20px;border-top:1px solid #e6e8ec}
+.contact-hours h3{font-size:20px;line-height:24px;margin-bottom:8px}
+.contact-hours p{margin:0;font-size:14.5px;line-height:24px}
+
+@media (max-width:991px){
+  .footer-info{grid-template-columns:1fr 1fr}
+  .about-groups{grid-template-columns:1fr 1fr}
+  .booking-grid{grid-template-columns:1fr;gap:30px}
+}
+@media (max-width:767px){
+  .footer-info{grid-template-columns:1fr}
+  .next-grid,.approach-grid,.about-groups{grid-template-columns:1fr}
+  .about-page,.contact-page,.booking{padding-top:50px}
+  .booking-intro h2{font-size:28px;line-height:36px}
+  .cal-day{height:40px;font-size:14px}
+  .cal-weekdays,.cal-grid{gap:4px}
+  .calendar{padding:12px}
+}
