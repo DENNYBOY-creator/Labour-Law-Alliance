@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>CRM | Labour Law Alliance</title>
+<link rel="icon" href="/assets/images/favicon-32.png">
+<style>
+:root{--navy:#16203b;--gold:#d3a728;--ink:#1d2433;--muted:#6b7482;--line:#e4e7ec;--bg:#f4f6f9;--card:#fff;--blue:#1a5fb4}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:var(--ink);background:var(--bg);font-size:14px}
+button,input,select,textarea{font:inherit}
+.hidden{display:none!important}
+.login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+.login-card{background:var(--card);width:100%;max-width:380px;border-radius:12px;box-shadow:0 10px 30px rgba(22,32,59,.12);overflow:hidden}
+.login-card .bar{height:6px;background:linear-gradient(90deg,#16203b,#349cfc 35%,#d3a728 70%,#fd5d14)}
+.login-card form{padding:28px}
+.login-card img{width:170px;display:block;margin:0 auto 18px}
+.login-card h1{font-size:18px;text-align:center;margin:0 0 20px}
+label{display:block;font-weight:600;font-size:13px;margin:12px 0 6px}
+input[type=email],input[type=password],input[type=search],select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+textarea{min-height:120px;resize:vertical}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 16px;border-radius:8px;border:1px solid transparent;background:var(--navy);color:#fff;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.6;cursor:default}
+.btn.gold{background:var(--gold);color:var(--navy)}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.full{width:100%;margin-top:18px}
+.msg{margin-top:12px;font-size:13px;color:#b42318;min-height:1em}
+.msg.ok{color:#067647}
+header.top{background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 20px;gap:12px}
+header.top img{height:40px;background:#fff;border-radius:6px;padding:3px 6px}
+header.top .who{display:flex;align-items:center;gap:12px;font-size:13px;color:#c9cfdb}
+header.top .btn.ghost{color:#fff;border-color:rgba(255,255,255,.3);padding:7px 12px}
+main{max-width:1280px;margin:0 auto;padding:20px 16px 40px}
+.stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;cursor:pointer;text-align:left}
+.stat b{display:block;font-size:22px}
+.stat span{color:var(--muted);font-size:12px}
+.stat.active{border-color:var(--gold);box-shadow:0 0 0 2px rgba(211,167,40,.25)}
+.toolbar{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.toolbar input{flex:1 1 260px}
+.toolbar select{flex:0 0 180px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);background:#fafbfc;font-weight:600}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:#f7f9fc}
+td .sub{color:var(--muted);font-size:12px;margin-top:2px}
+.badge{display:inline-block;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.s-new{background:#fef0c7;color:#93370d}
+.s-contacted{background:#d1e9ff;color:#175cd3}
+.s-consultation_booked{background:#ebe9fe;color:#5925dc}
+.s-client{background:#d1fadf;color:#067647}
+.s-closed{background:#eaecf0;color:#475467}
+.type{font-size:12px;color:var(--muted)}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+.drawer-bg{position:fixed;inset:0;background:rgba(16,24,40,.35)}
+.drawer{position:fixed;top:0;right:0;height:100%;width:min(520px,100%);background:#fff;box-shadow:-10px 0 30px rgba(16,24,40,.15);display:flex;flex-direction:column}
+.drawer .head{padding:18px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.drawer .head h2{margin:0;font-size:18px}
+.drawer .body{padding:16px 20px;overflow:auto;flex:1}
+.drawer .foot{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center}
+.close{background:none;border:0;font-size:24px;line-height:1;cursor:pointer;color:var(--muted)}
+dl{display:grid;grid-template-columns:150px 1fr;gap:8px 12px;margin:0 0 16px}
+dt{color:var(--muted);font-size:13px}
+dd{margin:0;white-space:pre-wrap;word-break:break-word}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.actions a{text-decoration:none}
+.meta{color:var(--muted);font-size:12px;margin-top:8px}
+@media (max-width:900px){.stats{grid-template-columns:repeat(3,minmax(0,1fr))}.hide-sm{display:none}}
+@media (max-width:560px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}th,td{padding:10px}dl{grid-template-columns:1fr}dt{margin-top:6px}.toolbar select{flex:1 1 140px}}
+</style>
+</head>
+<body>
+
+<section id="login" class="login hidden">
+  <div class="login-card">
+    <div class="bar"></div>
+    <form id="login-form">
+      <img src="/assets/images/logo.png?v=2" alt="Labour Law Alliance">
+      <h1>Staff sign in</h1>
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="username" required>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <button class="btn full" type="submit">Sign in</button>
+      <p class="msg" id="login-msg" role="alert"></p>
+    </form>
+  </div>
+</section>
+
+<section id="app" class="hidden">
+  <header class="top">
+    <img src="/assets/images/logo.png?v=2" alt="Labour Law Alliance">
+    <div class="who"><span id="who"></span><button class="btn ghost" id="refresh" type="button">Refresh</button><button class="btn ghost" id="logout" type="button">Sign out</button></div>
+  </header>
+  <main>
+    <div class="stats" id="stats"></div>
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="Search name, email, phone, service or message">
+      <select id="f-form" aria-label="Filter by form">
+        <option value="">All forms</option>
+        <option value="booking">Bookings</option>
+        <option value="enquiry">Enquiries</option>
+        <option value="contact">Contact messages</option>
+      </select>
+    </div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Received</th><th>Name</th><th class="hide-sm">Type</th><th class="hide-sm">Service / subject</th><th>Status</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty hidden" id="empty">No leads match.</div>
+    </div>
+  </main>
+</section>
+
+<div id="drawer" class="hidden">
+  <div class="drawer-bg" id="drawer-bg"></div>
+  <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="d-name">
+    <div class="head">
+      <div><h2 id="d-name"></h2><div class="type" id="d-type"></div></div>
+      <button class="close" id="d-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="body">
+      <div class="actions" id="d-actions"></div>
+      <dl id="d-fields"></dl>
+      <label for="d-status">Status</label>
+      <select id="d-status"></select>
+      <label for="d-notes">Notes</label>
+      <textarea id="d-notes" placeholder="Calls made, advice given, next steps…"></textarea>
+      <div class="meta" id="d-meta"></div>
+    </div>
+    <div class="foot"><button class="btn gold" id="d-save" type="button">Save changes</button><span class="msg" id="d-msg"></span></div>
+  </aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+(function () {
+  var sb = supabase.createClient('https://ktsvmkfrrxuijmgjdbwr.supabase.co', 'sb_publishable_E-C0YA_K3UpDWbbWqS9Lng__7pR26p9');
+  var STATUSES = [['new','New'],['contacted','Contacted'],['consultation_booked','Consultation booked'],['client','Client'],['closed','Closed']];
+  var FORMS = { booking: 'Booking', enquiry: 'Enquiry', contact: 'Contact message' };
+  var leads = [], staff = {}, statusFilter = '', current = null;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+  var label = function (st) { for (var i = 0; i < STATUSES.length; i++) if (STATUSES[i][0] === st) return STATUSES[i][1]; return st; };
+  var when = function (iso) { var d = new Date(iso); return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) + ' ' + d.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' }); };
+  var fullName = function (l) { return ((l.first_name || '') + ' ' + (l.last_name || '')).trim() || 'No name'; };
+
+  $('d-status').innerHTML = STATUSES.map(function (s) { return '<option value="' + s[0] + '">' + s[1] + '</option>'; }).join('');
+
+  function show(view) { $('login').classList.toggle('hidden', view !== 'login'); $('app').classList.toggle('hidden', view !== 'app'); }
+
+  async function start() {
+    var res = await sb.auth.getSession();
+    if (!res.data.session) return show('login');
+    var ok = await sb.rpc('is_staff');
+    if (ok.error || !ok.data) {
+      await sb.auth.signOut();
+      $('login-msg').textContent = 'This account is not on the staff list. Ask the administrator to add you.';
+      return show('login');
+    }
+    $('who').textContent = res.data.session.user.email;
+    show('app');
+    await load();
+  }
+
+  async function load() {
+    var r = await sb.from('leads').select('*').order('created_at', { ascending: false }).limit(1000);
+    if (r.error) { alert('Could not load leads: ' + r.error.message); return; }
+    leads = r.data || [];
+    var s = await sb.from('staff').select('user_id,email,full_name');
+    (s.data || []).forEach(function (m) { staff[m.user_id] = m.full_name || m.email; });
+    render();
+    var m = location.hash.match(/lead=([\w-]+)/);
+    if (m) { var l = leads.find(function (x) { return x.ref === m[1] || x.id === m[1]; }); if (l) open(l); }
+  }
+
+  function render() {
+    var counts = { '': leads.length };
+    STATUSES.forEach(function (s) { counts[s[0]] = 0; });
+    leads.forEach(function (l) { counts[l.status] = (counts[l.status] || 0) + 1; });
+    $('stats').innerHTML = [['', 'All leads']].concat(STATUSES).map(function (s) {
+      return '<button type="button" class="stat' + (statusFilter === s[0] ? ' active' : '') + '" data-status="' + s[0] + '"><b>' + (counts[s[0]] || 0) + '</b><span>' + s[1] + '</span></button>';
+    }).join('');
+
+    var q = $('q').value.trim().toLowerCase(), f = $('f-form').value;
+    var list = leads.filter(function (l) {
+      if (statusFilter && l.status !== statusFilter) return false;
+      if (f && l.form !== f) return false;
+      if (!q) return true;
+      return [l.first_name, l.last_name, l.email, l.phone, l.service, l.subject, l.message, l.region, l.notes].join(' ').toLowerCase().indexOf(q) !== -1;
+    });
+    $('empty').classList.toggle('hidden', list.length > 0);
+    $('rows').innerHTML = list.map(function (l) {
+      var contact = l.phone || l.email || '';
+      var what = l.form === 'booking' ? (l.service || 'Consultation') + (l.preferred_date ? ' · ' + l.preferred_date + ' ' + (l.preferred_time || '') : '') : (l.subject || l.service || (l.message || '').slice(0, 60));
+      return '<tr data-id="' + l.id + '"><td>' + esc(when(l.created_at)) + '</td><td><strong>' + esc(fullName(l)) + '</strong><div class="sub">' + esc(contact) + '</div></td><td class="hide-sm type">' + esc(FORMS[l.form]) + '</td><td class="hide-sm">' + esc(what) + '</td><td><span class="badge s-' + l.status + '">' + esc(label(l.status)) + '</span></td></tr>';
+    }).join('');
+  }
+
+  function open(l) {
+    current = l;
+    $('d-name').textContent = fullName(l);
+    $('d-type').textContent = FORMS[l.form] + ' · received ' + when(l.created_at) + (l.ref ? ' · ref ' + l.ref.slice(0, 8) : '');
+    var a = [];
+    if (l.phone) { var digits = l.phone.replace(/[^\d+]/g, ''); var wa = digits.replace(/^\+/, '').replace(/^0/, '27'); a.push('<a class="btn ghost" href="tel:' + esc(digits) + '">Call</a>'); a.push('<a class="btn ghost" href="https://wa.me/' + esc(wa) + '" target="_blank" rel="noopener">WhatsApp</a>'); }
+    if (l.email) a.push('<a class="btn ghost" href="mailto:' + esc(l.email) + '?subject=' + encodeURIComponent('Your enquiry with Labour Law Alliance') + '">Email</a>');
+    $('d-actions').innerHTML = a.join('');
+    var fields = [['Email', l.email], ['Phone', l.phone], ['Preferred date', l.preferred_date], ['Preferred time', l.preferred_time], ['Meeting type', l.meeting], ['Service', l.service], ['Relationship', l.relationship], ['Region', l.region], ['Subject', l.subject], ['Message', l.message]];
+    $('d-fields').innerHTML = fields.filter(function (x) { return x[1]; }).map(function (x) { return '<dt>' + x[0] + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('');
+    $('d-status').value = l.status;
+    $('d-notes').value = l.notes || '';
+    $('d-meta').textContent = l.updated_by ? 'Last updated ' + when(l.updated_at) + ' by ' + (staff[l.updated_by] || 'staff') : '';
+    $('d-msg').textContent = '';
+    $('drawer').classList.remove('hidden');
+    history.replaceState(null, '', '#lead=' + (l.ref || l.id));
+  }
+
+  function close() { $('drawer').classList.add('hidden'); current = null; history.replaceState(null, '', location.pathname); }
+
+  $('login-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var btn = e.target.querySelector('button'); btn.disabled = true; $('login-msg').textContent = '';
+    var r = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('password').value });
+    btn.disabled = false;
+    if (r.error) { $('login-msg').textContent = 'Sign in failed: ' + r.error.message; return; }
+    $('password').value = '';
+    start();
+  });
+  $('logout').addEventListener('click', async function () { await sb.auth.signOut(); leads = []; show('login'); });
+  $('refresh').addEventListener('click', load);
+  $('q').addEventListener('input', render);
+  $('f-form').addEventListener('change', render);
+  $('stats').addEventListener('click', function (e) { var b = e.target.closest('.stat'); if (!b) return; statusFilter = b.dataset.status; render(); });
+  $('rows').addEventListener('click', function (e) { var tr = e.target.closest('tr'); if (!tr) return; var l = leads.find(function (x) { return x.id === tr.dataset.id; }); if (l) open(l); });
+  $('d-close').addEventListener('click', close);
+  $('drawer-bg').addEventListener('click', close);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && current) close(); });
+  $('d-save').addEventListener('click', async function () {
+    if (!current) return;
+    var btn = this; btn.disabled = true; $('d-msg').className = 'msg'; $('d-msg').textContent = 'Saving…';
+    var r = await sb.from('leads').update({ status: $('d-status').value, notes: $('d-notes').value.trim() || null }).eq('id', current.id).select().single();
+    btn.disabled = false;
+    if (r.error) { $('d-msg').textContent = 'Could not save: ' + r.error.message; return; }
+    var i = leads.findIndex(function (x) { return x.id === current.id; });
+    leads[i] = r.data; current = r.data;
+    $('d-msg').className = 'msg ok'; $('d-msg').textContent = 'Saved';
+    $('d-meta').textContent = 'Last updated ' + when(r.data.updated_at) + ' by ' + (staff[r.data.updated_by] || 'you');
+    render();
+  });
+
+  sb.auth.onAuthStateChange(function (event) { if (event === 'SIGNED_OUT') show('login'); });
+  start();
+})();
+</script>
+</body>
+</html>
