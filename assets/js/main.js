@@ -25,6 +25,36 @@
   });
   nav.querySelectorAll('a').forEach(function (a) { a.addEventListener('click', closeMenu); });
 
+  /* ---------- Services dropdown (click/tap toggle; hover also opens it on desktop) ---------- */
+  var subs = nav.querySelectorAll('.has-sub');
+  function closeSubs(except) {
+    subs.forEach(function (li) {
+      if (li === except) return;
+      li.classList.remove('open');
+      var b = li.querySelector('.sub-toggle');
+      if (b) { b.setAttribute('aria-expanded', 'false'); b.setAttribute('aria-label', 'Show services'); }
+    });
+  }
+  subs.forEach(function (li) {
+    var btn = li.querySelector('.sub-toggle');
+    if (!btn) return;
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = !li.classList.contains('open');
+      closeSubs(li);
+      li.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', String(open));
+      btn.setAttribute('aria-label', open ? 'Hide services' : 'Show services');
+    });
+  });
+  document.addEventListener('click', function (e) { if (!e.target.closest('.has-sub')) closeSubs(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var openLi = nav.querySelector('.has-sub.open');
+    closeSubs();
+    if (openLi) openLi.querySelector('.sub-toggle').focus();
+  });
+
   /* ---------- Sticky header + scroll-to-top ---------- */
   var scrollBtn = document.getElementById('scrollTop');
   function onScroll() {
