@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 // Vercel Serverless Function: receives both website forms and emails them via Resend (https://resend.com).
 // Required environment variables (Vercel → Project → Settings → Environment Variables):
 //   RESEND_API_KEY   your Resend API key
@@ -55,16 +56,20 @@ export default async function handler(req, res) {
     : `Website contact: ${d.subject}`;
 
   const rows = form === 'booking'
-    ? [['Name', name], ['Email', d.email], ['Phone', d.phone], ['Preferred date', d.preferred_date], ['Preferred time', d.preferred_time], ['Meeting type', d.meeting], ['Service', d.service], ['Relationship to Matter', d.relationship], ['Message', d.message]]
+    ? [["Full Name", name], ['Email Address', d.email], ['Phone Number', d.phone], ['Preferred Date', d.preferred_date], ['Preferred Time', d.preferred_time], ['Meeting Type', d.meeting], ['Service', d.service], ['Relationship to Matter', d.relationship], ['Message', d.message]]
     : form === 'enquiry'
-    ? [['Name', name], ['Email', d.email], ['Phone', d.phone], ['Relationship to Matter', d.relationship], ['Region/Location', d.region], ['Nature of Request/Message', d.message]]
-    : [['Name', name], ['Email', d.email], ['Subject', d.subject], ['Message', d.message]];
+    ? [["Full Name", name], ['Email Address', d.email], ['Phone Number', d.phone], ['Relationship to Matter', d.relationship], ['Region/Location', d.region], ['Nature of Request/Message', d.message]]
+    : [["Full Name", name], ['Email Address', d.email], ['Subject', d.subject], ['Message', d.message]];
 
-  const html = `<h2 style="font-family:Arial,sans-serif">${esc(form === 'booking' ? 'Appointment Request' : form === 'enquiry' ? 'Enquiry Form' : 'Contact Us')} – labourlawalliance.co.za</h2>
-<table cellpadding="8" style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px">
-${rows.map(([k, v]) => `<tr><td style="border:1px solid #ddd;background:#f7f7f7;font-weight:bold;vertical-align:top">${esc(k)}</td><td style="border:1px solid #ddd;white-space:pre-wrap">${esc(v) || '—'}</td></tr>`).join('\n')}
-</table>`;
-  const text = rows.map(([k, v]) => `${k}: ${v || '—'}`).join('\n');
+  const ref = randomUUID();
+  const re = form === "booking" ? "Appointment Request" : form === "enquiry" ? "Consultation Enquiry" : "Contact Message";
+  const intro = form === "booking"
+    ? "A new appointment request has come in from the website."
+    : form === "enquiry"
+    ? "A new consultation enquiry has come in from the website."
+    : "A new message has come in from the website contact form.";
+  const html = renderEmail({ ref, re, intro, rows });
+  const text = `YOUR REF: ${ref}\nRE: ${re}\n\n${intro}\n\n` + rows.map(([k, v]) => `${k}: ${v || '—'}`).join('\n');
 
   try {
     const r = await fetch('https://api.resend.com/emails', {
@@ -88,4 +93,66 @@ ${rows.map(([k, v]) => `<tr><td style="border:1px solid #ddd;background:#f7f7f7;
     console.error(err);
     return res.status(502).json({ error: 'Could not send message.' });
   }
+}
+
+// ---- Branded email layout (table-based with inline styles so it renders the same in Gmail and Outlook) ----
+const SITE = 'https://labour-kappa.vercel.app';
+const FIRM = {
+  logo: `${SITE}/assets/images/logo.png?v=2`,
+  addr1: 'Prism Business Park, Ruby Cl',
+  addr2: 'Fourways, Johannesburg, 2191',
+  phone: '011 219 5025', tel: '+27112195025',
+  email: 'info@labourlawalliance.co.za',
+  web: 'labourlawalliance.co.za',
+};
+const SERIF = "Georgia,'Times New Roman',Times,serif";
+const SANS = "Arial,Helvetica,sans-serif";
+const linkStyle = 'color:#1a5fb4;text-decoration:underline';
+
+function cell(k, v) {
+  let val = esc(v) || '&mdash;';
+  if (v && /email/i.test(k)) val = `<a href="mailto:${esc(v)}" style="${linkStyle}">${esc(v)}</a>`;
+  if (v && /phone/i.test(k)) val = `<a href="tel:${esc(v.replace(/[^\d+]/g, ''))}" style="${linkStyle}">${esc(v)}</a>`;
+  return `<tr>
+<td width="38%" valign="top" style="padding:12px 0;border-bottom:1px solid #e3e3e3;font-family:${SERIF};font-size:16px;line-height:1.5;font-weight:bold;color:#1d1d1d">${esc(k)}</td>
+<td valign="top" style="padding:12px 0;border-bottom:1px solid #e3e3e3;font-family:${SERIF};font-size:16px;line-height:1.5;color:#1d1d1d;white-space:pre-wrap">${val}</td>
+</tr>`;
+}
+
+function renderEmail({ ref, re, intro, rows }) {
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(re)}</title></head>
+<body style="margin:0;padding:0;background:#f1f1f1">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f1f1"><tr><td align="center" style="padding:32px 12px">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:100%;max-width:640px;background:#ffffff;border-radius:10px 10px 0 0;overflow:hidden">
+<tr><td height="8" style="height:8px;line-height:8px;font-size:0;background:#16203b;background-image:linear-gradient(90deg,#16203b 0%,#349cfc 35%,#d3a728 70%,#fd5d14 100%)">&nbsp;</td></tr>
+<tr><td style="padding:36px 40px 0">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+    <td valign="middle" align="left" width="45%" style="padding-right:12px"><a href="https://${FIRM.web}"><img src="${FIRM.logo}" width="170" alt="Labour Law Alliance" style="display:block;width:170px;height:auto;border:0"></a></td>
+    <td valign="middle" align="right" style="font-family:${SANS};font-size:13px;line-height:1.6;color:#444">
+      ${FIRM.addr1}<br>${FIRM.addr2}<br>
+      <a href="tel:${FIRM.tel}" style="color:#444;text-decoration:none">${FIRM.phone}</a><br><a href="mailto:${FIRM.email}" style="color:#444;text-decoration:none">${FIRM.email}</a>
+    </td>
+  </tr></table>
+</td></tr>
+<tr><td style="padding:34px 40px 0;font-family:${SANS};font-size:13px;font-weight:bold;letter-spacing:2px;color:#a07a12">NEW FORM SUBMISSION</td></tr>
+<tr><td style="padding:14px 40px 0"><div style="border-top:2px solid #1d1d1d;line-height:0;font-size:0">&nbsp;</div></td></tr>
+<tr><td style="padding:30px 40px 0">
+  <table role="presentation" cellpadding="0" cellspacing="0" style="font-family:${SERIF};font-size:17px;color:#1d1d1d">
+    <tr><td style="padding:4px 18px 4px 0;font-weight:bold;white-space:nowrap">YOUR REF</td><td style="padding:4px 0;word-break:break-all">: ${esc(ref)}</td></tr>
+    <tr><td style="padding:4px 18px 4px 0;font-weight:bold">RE</td><td style="padding:4px 0">: ${esc(re)}</td></tr>
+  </table>
+</td></tr>
+<tr><td style="padding:26px 40px 8px;font-family:${SERIF};font-size:17px;color:#1d1d1d">${esc(intro)}</td></tr>
+<tr><td style="padding:0 40px 36px">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+${rows.map(([k, v]) => cell(k, v)).join('\n')}
+  </table>
+</td></tr>
+<tr><td style="padding:18px 40px;background:#16203b;font-family:${SANS};font-size:12px;line-height:1.6;color:#c9cfdb">
+  Sent from the website form at <a href="https://${FIRM.web}" style="color:#d3a728;text-decoration:none">${FIRM.web}</a>. Reply to this email to respond to the sender directly.
+</td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
 }
