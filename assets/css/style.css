@@ -110,7 +110,7 @@ section[id]{scroll-margin-top:20px}
 /* ---------- Gold bands ---------- */
 .band-wrap{padding:20px 10px}
 .band{position:relative;background:var(--gold);text-align:center;padding:70px 20px;overflow:hidden}
-.band::before{content:"";position:absolute;inset:0;background:url('/assets/images/shape-2.webp') center/auto no-repeat;opacity:1;pointer-events:none}
+.band::before{content:"";position:absolute;inset:0;background:url('/assets/images/shape-2.webp?v=2') center/auto no-repeat;opacity:1;pointer-events:none}
 .band>*{position:relative}
 .band h2{color:#fff;font-size:40px;line-height:48px;margin-bottom:18px}
 .band p{color:#fff;max-width:900px;margin:0 auto 30px}
@@ -343,7 +343,7 @@ a.feature-box{display:block;color:#fff}
 .side-services a:hover::after{transform:translateX(4px)}
 .side-services a[aria-current="page"]{padding-left:12px;border-left:3px solid var(--gold)}
 .side-cta{position:relative;background:var(--gold);padding:32px 26px;color:#fff;overflow:hidden}
-.side-cta::before{content:"";position:absolute;inset:0;background:url('/assets/images/shape-2.webp') center/cover no-repeat;opacity:.35;pointer-events:none}
+.side-cta::before{content:"";position:absolute;inset:0;background:url('/assets/images/shape-2.webp?v=2') center/cover no-repeat;opacity:.35;pointer-events:none}
 .side-cta>*{position:relative}
 .side-cta h2{color:#fff}
 .side-cta p{color:#fff}
