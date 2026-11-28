@@ -956,10 +956,11 @@
   };
   V.settings = function () {
     var tab = S.ui.sTab || 'Company details', st = S.settings || {};
-    var tabs = '<div class="subtabs">' + ['Company details', 'Banking & invoicing', 'Users', 'Email', 'Integrations'].map(function (x) { return '<button data-stab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    var tabs = '<div class="subtabs">' + ['Company details', 'Banking & invoicing', 'Users', 'Email', 'Calendar & reminders', 'Integrations'].map(function (x) { return '<button data-stab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
     var canEdit = canMoney();
     var body;
-    if (tab === 'Email' || tab === 'Integrations') body = settings3(tab);
+    if (tab === 'Calendar & reminders') body = calendarSettings();
+    else if (tab === 'Email' || tab === 'Integrations') body = settings3(tab);
     else if (tab === 'Users') {
       body = '<div class="panel"><div class="hd"><h2>People with access</h2>' + (isPartner() ? '<button class="btn pri" data-act="invite-staff">Invite staff member</button>' : '') + '</div><div class="tbl"><table><tr><th>Name</th><th>Email</th><th>Role</th><th>Signed in before</th><th>Access</th><th></th></tr>' +
         S.staff.map(function (s) { return '<tr><td><b>' + esc(s.full_name || '—') + '</b></td><td class="mono">' + esc(s.email) + '</td><td>' + roleLabel(s.role) + '</td><td>' + (s.user_id ? pill('Yes', 'p-green') : pill('Not yet', 'p-amber')) + '</td><td>' + (s.active ? pill('Active', 'p-green') : pill('Removed', 'p-red')) + '</td><td>' + (isPartner() ? '<button class="btn sm" data-act="edit-staff" data-id="' + s.id + '">Edit</button>' : '') + '</td></tr>'; }).join('') + '</table></div>' +
@@ -1719,6 +1720,36 @@
   /* ----- Show the linked matter on inbox emails ----- */
   var _mailView = mailView;
   mailView = function () { var html = _mailView(); return html.replace(/data-act="mail-open" data-uid="(\d+)">([\s\S]*?)<\/button>/g, function (all, uid, inner) { var e = S.mail.list.find(function (x) { return String(x.uid) === uid; }); var m = e && mailMatter(e.subject); return m ? all.replace('</span></span></button>', '</span><span style="display:flex;gap:6px;margin-top:4px">' + pill(m.ref, 'p-blue') + '</span></span></button>') : all; }); };
+
+  /* ----- Calendar subscription and daily reminders ----- */
+  function randomKey() { var a = new Uint8Array(24); crypto.getRandomValues(a); return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
+  function calendarSettings() {
+    var st = S.settings || {}, can = canMoney();
+    var feed = st.calendar_token ? 'https://labourlawalliance.co.za/api/calendar?t=' + st.calendar_token : '';
+    var copy = function (id, val) { return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="text" id="' + id + '" value="' + esc(val) + '" readonly style="flex:1;min-width:220px;font-family:monospace;font-size:12px"><button class="btn sm" data-act="copy" data-target="' + id + '">Copy</button></div>'; };
+    return (can ? '' : '<div class="callout p-amber">Only a partner or the bookkeeper can change these settings.</div>') +
+      '<div class="panel"><div class="hd"><h2>Calendar on your phone and in Outlook</h2>' + (feed ? pill('On', 'p-green') : pill('Off', 'p-amber')) + '</div>' +
+      '<p class="sub" style="margin:0 0 12px">A private calendar link with every appointment, hearing, CCMA date, deadline, statutory time limit (with a 7-day warning) and compliance date. Your calendar app checks it for changes about every hour. Anyone with the link can see these entries, so keep it to staff.</p>' +
+      (feed ? copy('cal-url', feed) +
+        '<div class="grid g3" style="margin-top:12px"><div><b>Outlook</b><div class="meta">Calendar → Add calendar → Subscribe from web → paste the link.</div></div><div><b>Google Calendar</b><div class="meta">Other calendars → + → From URL → paste the link.</div></div><div><b>iPhone</b><div class="meta">Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar → paste the link.</div></div></div>' +
+        (can ? '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-act="cal-token" data-mode="new">Make a new link (stops the old one)</button><button class="btn sm danger" data-act="cal-token" data-mode="off">Turn off</button></div>' : '')
+        : (can ? '<button class="btn pri" data-act="cal-token" data-mode="new">Create my calendar link</button>' : '')) + '</div>' +
+      '<div class="panel"><div class="hd"><h2>Appointment reminders and daily agenda</h2>' + (st.reminder_key ? pill(st.reminders_enabled ? 'Reminders on' : 'Reminders off', st.reminders_enabled ? 'p-green' : 'p-amber') : pill('Not set up', 'p-amber')) + '</div>' +
+      '<p class="sub" style="margin:0 0 12px">Every morning at about 06:00, clients with a confirmed appointment, CCMA or Labour Court date the next day get an email reminder (once per appointment), and the office gets today’s diary at info@.</p>' +
+      (st.reminder_key ? '<form id="rem-form" class="f" style="grid-template-columns:1fr"><label class="check" style="font-weight:400"><input type="checkbox" id="rem-on"' + (st.reminders_enabled ? ' checked' : '') + (can ? '' : ' disabled') + '> Email clients a reminder the day before their appointment</label><label class="check" style="font-weight:400"><input type="checkbox" id="agenda-on"' + (st.daily_agenda_enabled ? ' checked' : '') + (can ? '' : ' disabled') + '> Email the office today’s diary every morning</label>' + (can ? '<div><button class="btn pri" type="submit">Save</button> <span class="msg" id="rem-msg"></span></div>' : '') + '</form>' +
+        '<div style="margin-top:14px"><b>Last step, done once:</b> in <a href="https://vercel.com/" target="_blank" rel="noopener">Vercel</a> → project <b>labour</b> → Settings → Environment Variables, add <code>REMINDER_KEY</code> with this value (mark it Sensitive), then redeploy:</div>' + copy('rem-key', st.reminder_key) +
+        '<p class="meta" style="margin-top:8px">The key lets the morning job read tomorrow’s appointments. If you make a new key, update it in Vercel too.</p>' + (can ? '<button class="btn sm" data-act="rem-key">Make a new key</button>' : '')
+        : (can ? '<button class="btn pri" data-act="rem-key">Set up reminders</button>' : '')) + '</div>';
+  }
+  async function saveSettings(patch, msg) {
+    var r = await sb.from('company_settings').update(patch).eq('id', 1).select().single();
+    if (r.error || !r.data) { toast(r.error ? r.error.message : 'Only a partner or the bookkeeper can change this.'); return false; }
+    S.settings = r.data; if (msg) toast(msg); render(); return true;
+  }
+  P2['cal-token'] = function (el) { if (el.dataset.mode === 'off') { if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Click again to turn off'; return; } return saveSettings({ calendar_token: null }, 'Calendar link turned off'); } if (S.settings.calendar_token && el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Click again: the old link will stop working'; return; } return saveSettings({ calendar_token: randomKey() }, 'Calendar link ready'); };
+  P2['rem-key'] = function (el) { if (S.settings.reminder_key && el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Click again: update Vercel afterwards'; return; } return saveSettings(Object.assign({ reminder_key: randomKey() }, S.settings.reminder_key ? {} : { reminders_enabled: true, daily_agenda_enabled: true }), 'Reminder key created. Add it to Vercel to finish.'); };
+  P2['copy'] = function (el) { var i = $(el.dataset.target); i.select(); (navigator.clipboard ? navigator.clipboard.writeText(i.value) : Promise.reject()).then(function () { toast('Copied'); }, function () { document.execCommand('copy'); toast('Copied'); }); };
+  document.addEventListener('submit', function (e) { if (e.target.id !== 'rem-form') return; e.preventDefault(); saveSettings({ reminders_enabled: $('rem-on').checked, daily_agenda_enabled: $('agenda-on').checked }, 'Saved'); });
 
   /* ---------- Router ---------- */
   function current() { var h = location.hash.slice(1); if (h.indexOf('matter=') === 0) return 'matters'; if (h.indexOf('lead=') === 0) return 'inbox'; return V[h] ? h : 'dashboard'; }
