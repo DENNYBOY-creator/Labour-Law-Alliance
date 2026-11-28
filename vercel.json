@@ -55,6 +55,14 @@
   ],
   "headers": [
     {
+      "source": "/view",
+      "headers": [
+        { "key": "X-Robots-Tag", "value": "noindex, nofollow" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
       "source": "/onboard",
       "headers": [
         { "key": "X-Robots-Tag", "value": "noindex, nofollow" },

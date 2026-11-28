@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Document | Labour Law Alliance</title>
+<link rel="icon" href="/assets/images/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#16203b;--muted:#5b6475;--line:#e2e5ec;--bg:#eef0f4;--ok:#2e7d32;--err:#b3261e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 'Plus Jakarta Sans',system-ui,sans-serif}
+.bar{height:6px;background:linear-gradient(90deg,#16203b 0%,#349cfc 35%,#d3a728 70%,#fd5d14 100%)}
+.top{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line)}
+.top .in{max-width:860px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.top img{height:38px;width:auto}
+.top .t{flex:1;min-width:160px;font-weight:700}
+.top .t small{display:block;font-weight:500;color:var(--muted)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:9px 16px;border-radius:10px;border:1px solid #cdd2dc;background:#fff;color:var(--ink);font:600 14px 'Plus Jakarta Sans',sans-serif;cursor:pointer;text-decoration:none}
+.btn.pri{background:var(--ink);border-color:var(--ink);color:#fff}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn:disabled{opacity:.55;cursor:default}
+.wrap{max-width:860px;margin:0 auto;padding:18px 16px 60px}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;box-shadow:0 10px 30px rgba(22,32,59,.06);margin-bottom:16px}
+.note{border-radius:12px;padding:12px 16px;margin-bottom:14px;font-weight:600}
+.note.ok{background:#e6efe7;color:var(--ok)}
+.note.err{background:#fbe9e7;color:var(--err)}
+.note.info{background:#e8f1fc;color:#1a5fb4}
+iframe{display:block;width:100%;height:1100px;border:0;border-radius:12px;background:#fff;box-shadow:0 10px 30px rgba(22,32,59,.08)}
+.respond{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.modal{position:fixed;inset:0;background:rgba(10,14,24,.5);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20}
+.modal .card{width:100%;max-width:460px;margin:0}
+label{display:block;font-weight:600;font-size:13.5px;margin:12px 0 5px}
+input,textarea{width:100%;padding:11px 12px;border:1px solid #cdd2dc;border-radius:10px;font:inherit;color:inherit}
+textarea{min-height:80px}
+.msg{color:var(--err);font-weight:600;min-height:1.4em;margin-top:10px}
+.hidden{display:none!important}
+.muted{color:var(--muted)}
+h1{font-size:22px;margin:0 0 6px}
+@media print{.top,.bar,.respond-card,.note{display:none!important}body{background:#fff}.wrap{padding:0}}
+</style>
+</head>
+<body>
+<div class="bar"></div>
+<div class="top"><div class="in"><img src="/assets/images/logo.png?v=2" alt="Labour Law Alliance"><div class="t" id="title">Loading…<small id="sub"></small></div><button class="btn" id="print" type="button" disabled>Print</button><button class="btn pri" id="pdf" type="button" disabled>Download PDF</button></div></div>
+<div class="wrap">
+  <div id="state"></div>
+  <div class="card respond-card hidden" id="respond"><div class="respond"><div><b>Happy to go ahead?</b><div class="muted" style="font-size:14px">Accept the quote and we will be in touch to get started.</div></div><div style="display:flex;gap:8px"><button class="btn" type="button" id="decline">Decline</button><button class="btn ok" type="button" id="accept">Accept quote</button></div></div></div>
+  <iframe id="doc" title="Document" sandbox="allow-same-origin allow-modals" class="hidden"></iframe>
+</div>
+<div class="modal hidden" id="dlg"><form class="card" id="dlg-form" novalidate><h1 id="dlg-h">Accept quote</h1><p class="muted" id="dlg-p" style="margin:0">Type your full name to confirm.</p><label for="nm">Full name</label><input id="nm" autocomplete="name" maxlength="120"><label for="nt">Note (optional)</label><textarea id="nt" maxlength="2000"></textarea><p class="msg" id="dlg-msg" role="alert"></p><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" type="button" id="dlg-x">Cancel</button><button class="btn pri" type="submit" id="dlg-go">Confirm</button></div></form></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+(function () {
+  var sb = window.supabase.createClient('https://ktsvmkfrrxuijmgjdbwr.supabase.co', 'sb_publishable_E-C0YA_K3UpDWbbWqS9Lng__7pR26p9', { auth: { persistSession: false, autoRefreshToken: false } });
+  var $ = function (id) { return document.getElementById(id); };
+  var token = (location.hash || '').slice(1).replace(/[^a-f0-9]/gi, ''), info = null, action = 'accepted';
+  function note(kind, text) { $('state').innerHTML = ''; var d = document.createElement('div'); d.className = 'note ' + kind; d.textContent = text; $('state').appendChild(d); }
+  function fit() { var f = $('doc'); try { f.style.height = (f.contentDocument.documentElement.scrollHeight + 4) + 'px'; } catch (e) { /* ignore */ } }
+  function loadScript(src) { return new Promise(function (ok, bad) { var s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = bad; document.head.appendChild(s); }); }
+  async function pdf() {
+    var b = $('pdf'); b.disabled = true; b.textContent = 'Preparing…';
+    try {
+      if (!window.html2canvas) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+      if (!window.jspdf) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+      var f = document.createElement('iframe'); f.style.cssText = 'position:fixed;left:-10000px;top:0;width:760px;height:1200px;border:0;visibility:hidden';
+      f.srcdoc = info.html.replace(/https:\/\/labourlawalliance\.co\.za\/assets\//g, location.origin + '/assets/').replace(/#f1f1f1/g, '#ffffff').replace('padding:24px 12px', 'padding:0');
+      document.body.appendChild(f);
+      await new Promise(function (r) { f.onload = r; setTimeout(r, 8000); });
+      var d = f.contentDocument; await Promise.all(Array.prototype.map.call(d.images, function (im) { return im.complete ? 0 : new Promise(function (r) { im.onload = im.onerror = r; }); }));
+      var h = Math.ceil(d.body.firstElementChild ? d.body.firstElementChild.getBoundingClientRect().height : d.documentElement.scrollHeight); f.style.height = h + 'px';
+      var canvas = await window.html2canvas(d.body, { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 760, width: 760, height: h, windowHeight: h });
+      var doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true }), m = 6, w = 198, pageH = 285, ppm = canvas.width / w, slice = Math.floor(pageH * ppm);
+      for (var y = 0, p = 0; y < canvas.height; y += slice, p++) { var hh = Math.min(slice, canvas.height - y), c = document.createElement('canvas'); c.width = canvas.width; c.height = hh; var ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, hh); ctx.drawImage(canvas, 0, y, canvas.width, hh, 0, 0, canvas.width, hh); if (p) doc.addPage(); doc.addImage(c.toDataURL('image/jpeg', 0.9), 'JPEG', m, m, w, hh / ppm); }
+      doc.save((info.title || 'document').replace(/[^\w\-]+/g, '-') + '.pdf'); f.remove();
+    } catch (e) { alert('Could not make the PDF. Use Print and choose “Save as PDF” instead.'); }
+    b.disabled = false; b.textContent = 'Download PDF';
+  }
+  function open(a) { action = a; $('dlg-h').textContent = a === 'accepted' ? 'Accept quote' : 'Decline quote'; $('dlg-p').textContent = a === 'accepted' ? 'Type your full name to accept this quote.' : 'Type your full name. You can tell us why in the note.'; $('dlg-go').textContent = a === 'accepted' ? 'Accept' : 'Decline'; $('dlg-msg').textContent = ''; $('dlg').classList.remove('hidden'); $('nm').focus(); }
+  $('accept').onclick = function () { open('accepted'); };
+  $('decline').onclick = function () { open('declined'); };
+  $('dlg-x').onclick = function () { $('dlg').classList.add('hidden'); };
+  $('dlg-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var nm = $('nm').value.trim(); if (nm.length < 3) { $('dlg-msg').textContent = 'Type your full name.'; return; }
+    $('dlg-go').disabled = true;
+    var r = await sb.rpc('share_respond', { p_token: token, p_action: action, p_name: nm, p_note: $('nt').value.trim() || null });
+    $('dlg-go').disabled = false;
+    if (r.error) { $('dlg-msg').textContent = r.error.message; return; }
+    $('dlg').classList.add('hidden'); $('respond').classList.add('hidden');
+    note(action === 'accepted' ? 'ok' : 'info', action === 'accepted' ? 'Thank you, you have accepted this quote. We will be in touch to get started.' : 'Thank you, we have noted that you declined this quote.');
+  });
+  $('print').onclick = function () { try { $('doc').contentWindow.focus(); $('doc').contentWindow.print(); } catch (e) { window.print(); } };
+  $('pdf').onclick = pdf;
+  async function start() {
+    if (token.length < 40) { $('title').firstChild.textContent = 'Link not complete'; return note('err', 'Please open the full link from your email or message.'); }
+    var r = await sb.rpc('share_get', { p_token: token });
+    if (r.error || !r.data || r.data.status === 'gone') { $('title').firstChild.textContent = 'Link not available'; return note('err', 'This link is not valid any more. Please ask us for a new one.'); }
+    if (r.data.status === 'expired') { $('title').firstChild.textContent = 'Link expired'; return note('err', 'This link has expired. Please ask us for a new one.'); }
+    info = r.data;
+    document.title = (info.title || 'Document') + ' | ' + (info.firm || 'Labour Law Alliance');
+    $('title').firstChild.textContent = info.title || 'Document';
+    $('sub').textContent = info.firm ? 'From ' + info.firm + (info.phone ? ' · ' + info.phone : '') : '';
+    if (info.response === 'accepted') note('ok', 'You accepted this quote' + (info.responded_at ? ' on ' + new Date(info.responded_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' }) : '') + '.');
+    else if (info.response === 'declined') note('info', 'You declined this quote.');
+    else if (info.kind === 'quote' && info.quote_status === 'invoiced') note('ok', 'This quote has been accepted and invoiced.');
+    if (info.can_respond) $('respond').classList.remove('hidden');
+    var f = $('doc'); f.onload = fit; f.srcdoc = info.html; f.classList.remove('hidden'); window.addEventListener('resize', fit);
+    $('print').disabled = false; $('pdf').disabled = false;
+  }
+  start();
+})();
+</script>
+</body>
+</html>

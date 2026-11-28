@@ -3,5 +3,6 @@ Allow: /
 Disallow: /api/
 Disallow: /admin
 Disallow: /onboard
+Disallow: /view
 
 Sitemap: https://labourlawalliance.co.za/sitemap.xml
