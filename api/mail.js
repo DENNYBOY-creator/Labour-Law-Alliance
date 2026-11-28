@@ -6,7 +6,8 @@
 //   MAIL_HOST  optional, defaults to thragg.aserv.co.za (port 993, SSL)
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
-import { denyUnlessStaff } from './_auth.js';
+import { randomUUID } from 'node:crypto';
+import { denyUnlessStaff, SUPABASE_URL, SUPABASE_KEY } from './_auth.js';
 
 const cfg = () => ({ user: process.env.MAIL_USER, pass: process.env.MAIL_PASS, host: process.env.MAIL_HOST || 'thragg.aserv.co.za', port: Number(process.env.MAIL_PORT) || 993 });
 const emailOk = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
@@ -89,7 +90,42 @@ export default async function handler(req, res) {
       return res.status(200).json(msg);
     }
 
-    if (action === 'send' && req.method === 'POST') {
+if (action === 'save' && req.method === 'POST') {
+  // Saves one attachment into the CRM document centre, using the signed-in staff member's own access.
+  let b = req.body; if (typeof b === 'string') { try { b = JSON.parse(b); } catch { b = {}; } } b = b || {};
+  const uid = Number(b.uid), index = Number(b.index);
+  if (!uid || !Number.isInteger(index) || index < 0) return res.status(400).json({ error: 'Missing attachment.' });
+  const isId = (v) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v || ''));
+  const folder = String(b.folder || 'Correspondence').slice(0, 80);
+  const att = await withImap(async (cl) => {
+    const lock = await cl.getMailboxLock('INBOX');
+    try {
+      const m = await cl.fetchOne(String(uid), { source: true }, { uid: true });
+      if (!m) return null;
+      const p = await simpleParser(m.source);
+      return (p.attachments || [])[index] || null;
+    } finally { lock.release(); }
+  });
+  if (!att) return res.status(404).json({ error: 'That attachment was not found. The email may have been moved.' });
+  if (att.size > 26214400) return res.status(413).json({ error: 'This file is larger than 25 MB.' });
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const fname = att.filename || 'attachment';
+  const path = folder.replace(/[^\w\- ]+/g, '_') + '/' + randomUUID() + '-' + fname.replace(/[^\w.\- ]+/g, '_').slice(-120);
+  const auth = { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}` };
+  const up = await fetch(`${SUPABASE_URL}/storage/v1/object/documents/${path.split('/').map(encodeURIComponent).join('/')}`, { method: 'POST', headers: { ...auth, 'Content-Type': att.contentType || 'application/octet-stream', 'x-upsert': 'false' }, body: att.content });
+  if (!up.ok) { console.error('Storage upload failed', up.status, await up.text()); return res.status(502).json({ error: 'Could not store the file.' }); }
+  const row = { folder, name: String(b.name || fname).trim().slice(0, 200) || fname, storage_path: path, mime: att.contentType || null, size_bytes: att.size, client_id: isId(b.client_id) ? b.client_id : null, matter_id: isId(b.matter_id) ? b.matter_id : null };
+  const ins = await fetch(`${SUPABASE_URL}/rest/v1/documents`, { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify(row) });
+  if (!ins.ok) {
+    console.error('Document insert failed', ins.status, await ins.text());
+    await fetch(`${SUPABASE_URL}/storage/v1/object/documents`, { method: 'DELETE', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ prefixes: [path] }) }).catch(() => {});
+    return res.status(502).json({ error: 'Could not record the document.' });
+  }
+  const [doc] = await ins.json();
+  return res.status(200).json({ ok: true, doc });
+}
+
+if (action === 'send' && req.method === 'POST') {
       let b = req.body; if (typeof b === 'string') { try { b = JSON.parse(b); } catch { b = {}; } } b = b || {};
       const to = String(b.to || '').trim(), subject = String(b.subject || '').trim().slice(0, 250), text = String(b.text || '').slice(0, 50000);
       if (!emailOk(to)) return res.status(400).json({ error: 'Enter a valid email address.' });
