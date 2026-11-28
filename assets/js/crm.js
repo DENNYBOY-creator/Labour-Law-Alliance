@@ -162,7 +162,11 @@
     S.deadlines.forEach(function (d) { if (d.done) return; var m = byId(S.matters, d.matter_id); out.push({ date: D(d.due_date), what: d.title, ref: m ? m.ref : '', title: m ? m.title : '', kind: 'Deadline', law: '', matter: d.matter_id, deadlineId: d.id }); });
     (S.hearings || []).forEach(function (h) { if (h.status !== 'scheduled' || !h.starts_at) return; var m = byId(S.matters, h.matter_id); out.push({ date: D(h.starts_at), what: 'Disciplinary hearing: ' + h.employee_name + ' · ' + fmtT(h.starts_at), ref: m ? m.ref : '', title: clientName(h.client_id), kind: 'Hearing', law: '', matter: h.matter_id }); });
     (S.compliance || []).forEach(function (c) { if (c.status !== 'open') return; out.push({ date: D(c.due_date), what: c.obligation, ref: '', title: clientName(c.client_id), kind: 'Compliance', law: c.law || '' }); });
-    S.appts.forEach(function (a) { if (a.status !== 'scheduled') return; var m = byId(S.matters, a.matter_id); out.push({ date: D(a.starts_at), what: a.title + ' · ' + fmtT(a.starts_at), ref: m ? m.ref : '', title: a.location || '', kind: kindLabel(a.kind), law: '', appt: a.id }); });
+    S.appts.forEach(function (a) {
+      if (a.status !== 'scheduled' && a.status !== 'provisional') return;
+      if (/^(hearing|matter-next):/.test(a.source_key || '')) return; // already listed as a hearing or matter next step
+      var m = byId(S.matters, a.matter_id); out.push({ date: D(a.starts_at), what: a.title + ' · ' + fmtT(a.starts_at) + (a.status === 'provisional' ? ' (to confirm)' : ''), ref: m ? m.ref : '', title: a.location || '', kind: kindLabel(a.kind), law: '', appt: a.id });
+    });
     out.forEach(function (x) { x.left = daysLeft(x.date); });
     return out.sort(function (a, b) { return a.date - b.date; });
   }
@@ -248,6 +252,7 @@
     return '<div style="display:flex;flex-direction:column;gap:12px"><div><div class="meta">' + esc(FORMS[l.form] || l.form) + ' · ' + fmtDT(l.created_at) + '</div><h2 style="margin-top:4px">' + esc(leadName(l)) + '</h2></div>' +
       '<div style="display:flex;gap:6px;flex-wrap:wrap">' + phoneLinks(l.phone, l.email, 'Your enquiry with Labour Law Alliance') + '</div>' +
       '<dl class="kv">' + fields.filter(function (x) { return x[1]; }).map(function (x) { return '<dt>' + x[0] + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' +
+      conflictPanel(leadName(l), { lead: l.id, client: l.client_id }) +
       '<div class="f"><div class="fld"><label for="l-status">Pipeline stage</label><select id="l-status">' + LEAD_STAGES.map(function (s) { return '<option value="' + s[0] + '"' + (s[0] === l.status ? ' selected' : '') + '>' + s[1] + '</option>'; }).join('') + '</select></div>' +
       '<div class="fld"><label for="l-value">Expected fee (R)</label><input type="number" id="l-value" step="100" value="' + (l.est_value == null ? '' : l.est_value) + '"></div>' +
       '<div class="fld full"><label for="l-notes">Notes</label><textarea id="l-notes" placeholder="Calls made, advice given, next steps…">' + esc(l.notes || '') + '</textarea></div></div>' +
@@ -289,7 +294,7 @@
       '</table></div></div>';
   };
   var CLIENT_FIELDS = [
-    { k: 'name', label: 'Client name', req: true },
+    { k: 'name', label: 'Client name', req: true, hint: 'Checked for conflicts as you type.' },
     { k: 'kind', label: 'Type', type: 'select', options: [['individual', 'Individual (employee)'], ['employer', 'Employer'], ['union', 'Trade union']] },
     { k: 'contact_person', label: 'Contact person (for employers)' },
     { k: 'id_or_reg_no', label: 'ID or company registration no.' },
@@ -311,6 +316,7 @@
     }
     openForm({
       title: isNew ? 'Add client' : 'Client: ' + c.name, fields: CLIENT_FIELDS, values: c || { kind: 'individual', fica_status: 'outstanding' }, extra: extra,
+      onInput: function () { conflictHint('m-name', { client: c && c.id, lead: c && c.lead_id }); },
       save: async function (d) {
         var r = isNew ? await sb.from('clients').insert(Object.assign(d, c && c.lead_id ? { lead_id: c.lead_id } : {})).select().single() : await sb.from('clients').update(d).eq('id', c.id).select().single();
         if (r.error) return dbErr(r);
@@ -344,7 +350,7 @@
       { k: 'client_id', label: 'Client', type: 'select', req: true, blank: 'Choose a client', options: S.clients.map(function (c) { return [c.id, c.name]; }), hint: '<a href="#" data-act="quick-client">+ Add a new client</a>' },
       { k: 'title', label: 'Matter title', req: true, ph: 'e.g. T. Mokoena v Ridgeway Logistics' },
       { k: 'acting_for', label: 'We act for', type: 'select', options: [['employee', 'Employee'], ['employer', 'Employer'], ['union', 'Trade union']] },
-      { k: 'other_party', label: 'Other party' },
+      { k: 'other_party', label: 'Other party', hint: 'Checked against all clients, matters, hearings and enquiries.' },
       { k: 'dispute_type', label: 'Type of matter', type: 'select', blank: 'Choose…', options: DISPUTES },
       { k: 'forum', label: 'Forum', type: 'select', blank: 'Choose…', options: FORUMS },
       { k: 'case_no', label: 'Case number', ph: 'e.g. GAJB 18842-26' },
@@ -372,11 +378,14 @@
   function editMatter(m, preset) {
     var isNew = !m || !m.id;
     openForm({
-      title: isNew ? 'New matter' : 'Edit ' + m.ref, fields: matterFields(), values: m || Object.assign({ stage: 'Intake', acting_for: 'employee' }, preset || {}), onInput: keyDateHint,
+      title: isNew ? 'New matter' : 'Edit ' + m.ref, fields: matterFields(), values: m || Object.assign({ stage: 'Intake', acting_for: 'employee' }, preset || {}), onInput: function () { keyDateHint(); conflictHint('m-other_party', { matter: m && m.id, otherParty: true }); },
       save: async function (d) {
         var r = isNew ? await sb.from('matters').insert(Object.assign(d, preset && preset.lead_id ? { lead_id: preset.lead_id } : {})).select().single() : await sb.from('matters').update(d).eq('id', m.id).select().single();
         if (r.error) return dbErr(r);
+        var wasOpen = isNew || m.stage !== 'Closed';
         upsertLocal(S.matters, r.data);
+        await syncMatterNext(r.data);
+        if (wasOpen && r.data.stage === 'Closed') setTimeout(function () { closeMatterChecklist(r.data); }, 50);
         if (isNew && preset && preset.lead_id) { var lr = await sb.from('leads').update({ matter_id: r.data.id, status: 'client' }).eq('id', preset.lead_id).select().single(); if (!lr.error) upsertLocal(S.leads, lr.data); }
         toast(isNew ? 'Matter ' + r.data.ref + ' opened' : 'Matter saved');
         if (isNew) location.hash = 'matter=' + r.data.id; else render();
@@ -385,7 +394,7 @@
     });
   }
   function matterDetail(m) {
-    var tabs = ['Overview', 'Deadlines', 'File notes', 'Appointments', 'Time', 'Hearings', 'Billing', 'Documents'];
+    var tabs = ['Overview', 'Deadlines', 'File notes', 'Appointments', 'Time', 'Hearings', 'Billing', 'Documents', 'Emails'];
     var t = S.ui.matterTab, si = STAGES.indexOf(m.stage), r = m.key_rule && rule(m.key_rule), c = byId(S.clients, m.client_id);
     var body = '';
     if (t === 'Overview') body = '<div class="grid g2"><dl class="kv"><dt>Client</dt><dd>' + (c ? '<a href="#" data-client="' + c.id + '">' + esc(c.name) + '</a>' : '—') + '</dd><dt>We act for</dt><dd>' + esc(m.acting_for) + '</dd><dt>Other party</dt><dd>' + esc(m.other_party || '—') + '</dd><dt>Type</dt><dd>' + esc(m.dispute_type || '—') + '</dd><dt>Forum</dt><dd>' + esc(m.forum || '—') + '</dd><dt>Case number</dt><dd>' + esc(m.case_no || '—') + '</dd><dt>Attorney</dt><dd>' + esc(m.attorney || '—') + '</dd><dt>Opened</dt><dd>' + fmt(m.created_at) + '</dd></dl>' +
@@ -408,6 +417,7 @@
       body = '<div style="margin-bottom:10px"><button class="btn pri" data-act="new-appt" data-matter="' + m.id + '">New appointment</button></div><div class="list">' + (as.map(function (a) { return '<div class="row" style="align-items:center">' + dateBox(a.starts_at) + '<div class="grow"><b>' + esc(a.title) + '</b><div class="meta">' + fmtT(a.starts_at) + ' · ' + kindLabel(a.kind) + (a.location ? ' · ' + esc(a.location) : '') + '</div></div>' + pill(a.status, a.status === 'scheduled' ? 'p-blue' : a.status === 'done' ? 'p-green' : '') + '<button class="btn sm" data-appt="' + a.id + '">Open</button></div>'; }).join('') || empty('No appointments linked to this matter.')) + '</div>';
     }
     if (t === 'Time') body = matterTime(m);
+    if (t === 'Emails') body = matterEmails(m);
     if (t === 'Hearings') body = matterHearings(m);
     if (t === 'Billing') body = matterBilling(m);
     if (t === 'Documents') body = matterDocs(m);
@@ -435,9 +445,11 @@
     var ws = S.ui.weekStart || weekStart(new Date());
     var days = [0, 1, 2, 3, 4, 5, 6].map(function (i) { return addDays(ws, i); });
     var pendingBookings = S.leads.filter(function (l) { return l.form === 'booking' && !S.appts.some(function (a) { return a.lead_id === l.id; }) && ['new', 'contacted'].indexOf(l.status) >= 0; });
+    var provisional = S.appts.filter(function (a) { return a.status === 'provisional'; });
     var upcoming = S.appts.filter(function (a) { return D(a.starts_at) >= today(); });
     return head('Appointments', 'Consultations, meetings and set-downs', 'Website bookings wait below until you confirm them. CCMA dates and hearings linked to matters show here too.', '<button class="btn pri" data-act="new-appt">New appointment</button>') +
-      (pendingBookings.length ? '<div class="panel" style="border-color:#d3a728"><div class="hd"><h2>Website bookings to confirm</h2></div><div class="list">' + pendingBookings.map(function (l) { return '<div class="row" style="align-items:center"><div class="grow"><b>' + esc(leadName(l)) + '</b><div class="meta">Asked for ' + esc(l.preferred_date || '') + ' ' + esc(l.preferred_time || '') + ' · ' + esc(l.meeting || '') + ' · ' + esc(l.service || '') + '</div></div>' + phoneLinks(l.phone, l.email, 'Your consultation with Labour Law Alliance') + '<button class="btn sm pri" data-act="lead-appt" data-id="' + l.id + '">Confirm</button></div>'; }).join('') + '</div></div>' : '') +
+      (provisional.length ? '<div class="panel" style="border-color:#d3a728"><div class="hd"><h2>Website bookings to confirm</h2><span class="meta">Already in the calendar as provisional. Confirm once you have spoken to the client.</span></div><div class="list">' + provisional.map(function (a) { var l = byId(S.leads, a.lead_id) || {}; return '<div class="row" style="align-items:center">' + dateBox(a.starts_at) + '<div class="grow"><b>' + esc(a.title) + '</b><div class="meta">' + fmtT(a.starts_at) + ' · ' + esc(a.location || '') + (l.service ? ' · ' + esc(l.service) : '') + '</div></div>' + phoneLinks(l.phone, l.email, 'Your consultation with Labour Law Alliance') + '<button class="btn sm" data-appt="' + a.id + '">Change</button><button class="btn sm pri" data-act="confirm-appt" data-id="' + a.id + '">Confirm</button></div>'; }).join('') + '</div></div>' : '') +
+      (pendingBookings.length ? '<div class="panel" style="border-color:#d3a728"><div class="hd"><h2>Website bookings without a time</h2></div><div class="list">' + pendingBookings.map(function (l) { return '<div class="row" style="align-items:center"><div class="grow"><b>' + esc(leadName(l)) + '</b><div class="meta">Asked for ' + esc(l.preferred_date || '') + ' ' + esc(l.preferred_time || '') + ' · ' + esc(l.meeting || '') + ' · ' + esc(l.service || '') + '</div></div>' + phoneLinks(l.phone, l.email, 'Your consultation with Labour Law Alliance') + '<button class="btn sm pri" data-act="lead-appt" data-id="' + l.id + '">Confirm</button></div>'; }).join('') + '</div></div>' : '') +
       '<div class="panel"><div class="hd"><h2>Week of ' + fmt(ws) + '</h2><div style="display:flex;gap:6px"><button class="btn sm" data-week="-7">← Previous</button><button class="btn sm" data-week="0">This week</button><button class="btn sm" data-week="7">Next →</button></div></div><div class="week">' +
       days.map(function (d) {
         var as = S.appts.filter(function (a) { return ymd(a.starts_at) === ymd(d); }).sort(function (a, b) { return D(a.starts_at) - D(b.starts_at); });
@@ -454,7 +466,7 @@
       { k: 'location', label: 'Where', ph: 'Office (Fourways), Teams, CCMA Johannesburg…' },
       { k: 'matter_id', label: 'Matter', type: 'select', blank: 'Not linked', options: S.matters.map(function (m) { return [m.id, m.ref + ' · ' + m.title]; }) },
       { k: 'client_id', label: 'Client', type: 'select', blank: 'Not linked', options: S.clients.map(function (c) { return [c.id, c.name]; }) },
-      { k: 'status', label: 'Status', type: 'select', options: [['scheduled', 'Scheduled'], ['done', 'Done'], ['cancelled', 'Cancelled']] },
+      { k: 'status', label: 'Status', type: 'select', options: [['provisional', 'Provisional (to confirm)'], ['scheduled', 'Scheduled'], ['done', 'Done'], ['cancelled', 'Cancelled']] },
       { k: 'notes', label: 'Notes', type: 'textarea', full: true }
     ];
   }
@@ -479,7 +491,7 @@
   function newLead() {
     openForm({
       title: 'New enquiry', fields: [
-        { k: 'first_name', label: 'First name', req: true }, { k: 'last_name', label: 'Last name' },
+        { k: 'first_name', label: 'First name', req: true }, { k: 'last_name', label: 'Last name', hint: 'Checked for conflicts as you type.' },
         { k: 'phone', label: 'Phone', type: 'tel' }, { k: 'email', label: 'Email', type: 'email' },
         { k: 'relationship', label: 'Acting for', type: 'select', options: ['Employee', 'Employer', 'Union'] },
         { k: 'source', label: 'How they found us', type: 'select', options: ['Phone call', 'WhatsApp', 'Walk-in', 'Referral', 'Google search', 'Google Business Profile', 'Facebook', 'LinkedIn', 'Other'] },
@@ -487,6 +499,7 @@
         { k: 'est_value', label: 'Expected fee (R)', type: 'number', step: 100 },
         { k: 'message', label: 'Notes from the call', type: 'textarea', full: true }
       ], values: { relationship: 'Employee', source: 'Phone call' },
+      onInput: function () { var f = $('m-first_name'), l = $('m-last_name'); conflictHint('m-last_name', {}, ((f && f.value) || '') + ' ' + ((l && l.value) || '')); },
       save: async function (d) {
         d.form = 'contact'; d.status = 'new'; d.ref = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())); d.seen_at = new Date().toISOString(); d.subject = d.service || 'Enquiry by ' + (d.source || 'phone');
         var r = await sb.from('leads').insert(d).select().single();
@@ -768,7 +781,8 @@
   }
   function matterDocs(m) {
     var ds = S.docs.filter(function (d) { return d.matter_id === m.id; });
-    return '<div style="margin-bottom:12px"><button class="btn pri" data-act="upload" data-matter="' + m.id + '" data-client="' + (m.client_id || '') + '">Upload files</button></div>' + docTable(ds);
+    return '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn pri" data-act="upload" data-matter="' + m.id + '" data-client="' + (m.client_id || '') + '">Upload files</button>' +
+      Object.keys(CONTRACTS).map(function (t) { return '<button class="btn sm" data-act="matter-doc" data-matter="' + m.id + '" data-type="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div><p class="meta" style="margin:-4px 0 12px">The document buttons open the template with this matter’s client, other party, case number and fee details filled in.</p>' + docTable(ds);
   }
 
   /* ----- Document centre ----- */
@@ -898,8 +912,8 @@
     return head('Document centre', 'Create a document', 'Choose a template, link the client and matter, and fill in the details. Every template is a starting draft: an attorney must check it before it is signed.') + tabs +
       '<div class="grid g2"><div class="panel"><div class="f" style="grid-template-columns:1fr">' +
       '<div class="fld"><label for="ct-type">Template</label><select id="ct-type">' + types.map(function (t) { return '<option' + (t === type ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select></div>' +
-      '<div class="fld"><label for="ct-client">Client</label><select id="ct-client"><option value="">Choose a client</option>' + S.clients.map(function (c) { return '<option value="' + c.id + '">' + esc(c.name) + '</option>'; }).join('') + '</select></div>' +
-      '<div class="fld"><label for="ct-matter">Matter</label><select id="ct-matter"><option value="">Not linked</option>' + S.matters.map(function (m) { return '<option value="' + m.id + '">' + esc(m.ref + ' · ' + m.title) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="fld"><label for="ct-client">Client</label><select id="ct-client"><option value="">Choose a client</option>' + S.clients.map(function (c) { return '<option value="' + c.id + '"' + (c.id === S.ui.ctClient ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></div>' +
+      '<div class="fld"><label for="ct-matter">Matter</label><select id="ct-matter"><option value="">Not linked</option>' + S.matters.map(function (m) { return '<option value="' + m.id + '"' + (m.id === S.ui.ctMatter ? ' selected' : '') + '>' + esc(m.ref + ' · ' + m.title) + '</option>'; }).join('') + '</select><span class="hint">Choosing a matter fills in the parties, case number and fee details.</span></div>' +
       def.fields.map(function (f, i) { return '<div class="fld"><label for="ct-f' + i + '">' + esc(f) + '</label><input type="text" id="ct-f' + i + '"></div>'; }).join('') +
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn pri" data-act="ct-save">Save to document centre</button><button class="btn" data-act="ct-print">Print / save PDF</button></div><span class="msg" id="ct-msg"></span></div></div>' +
       '<div class="panel" style="padding:0;overflow:hidden"><iframe id="ct-preview" title="Document preview" style="width:100%;height:640px;border:0;background:#fff"></iframe></div></div>';
@@ -925,6 +939,7 @@
       { k: 'address1', label: 'Street address' }, { k: 'address2', label: 'Suburb, city, code' },
       { k: 'phone', label: 'Phone (calls)' }, { k: 'whatsapp', label: 'WhatsApp' },
       { k: 'email', label: 'Main email', type: 'email' }, { k: 'website', label: 'Website' },
+      { k: 'google_review_link', label: 'Google review link', full: true, ph: 'https://g.page/r/…/review', hint: 'Google Business Profile → Ask for reviews → copy the link. Used when you close a matter.' },
       { k: 'office_hours', label: 'Office hours' }, { k: 'document_footer', label: 'Footer on quotes and invoices', full: true }
     ],
     'Banking & invoicing': [
@@ -1005,7 +1020,9 @@
     var ct = $('ct-type');
     if (ct) {
       ct.onchange = function () { S.ui.ctType = ct.value; render(); };
-      ['ct-client', 'ct-matter'].forEach(function (id) { $(id).onchange = previewContract; });
+      $('ct-client').onchange = function () { S.ui.ctClient = $('ct-client').value; previewContract(); };
+      $('ct-matter').onchange = function () { S.ui.ctMatter = $('ct-matter').value; var m = byId(S.matters, S.ui.ctMatter); if (m && m.client_id) { $('ct-client').value = m.client_id; S.ui.ctClient = m.client_id; } fillContractDefaults(); previewContract(); };
+      if (S.ui.ctMatter) fillContractDefaults();
       document.querySelectorAll('[id^="ct-f"]').forEach(function (i) { i.oninput = previewContract; });
       previewContract();
     }
@@ -1430,7 +1447,7 @@
         d.checklist = {}; document.querySelectorAll('.hck').forEach(function (c) { d.checklist[c.dataset.k] = c.checked; });
         var r = isNew ? await sb.from('hearings').insert(d).select().single() : await sb.from('hearings').update(d).eq('id', h.id).select().single();
         if (r.error) return dbErr(r);
-        upsertLocal(S.hearings, r.data); S.hearings.sort(function (a, b) { return (a.starts_at || '') < (b.starts_at || '') ? -1 : 1; });
+        upsertLocal(S.hearings, r.data); await syncHearingAppt(r.data); S.hearings.sort(function (a, b) { return (a.starts_at || '') < (b.starts_at || '') ? -1 : 1; });
         toast(isNew ? 'Hearing added' : 'Hearing saved'); render();
       },
       del: isNew ? null : async function () { var r = await sb.from('hearings').delete().eq('id', h.id); if (r.error) return dbErr(r); S.hearings = S.hearings.filter(function (x) { return x.id !== h.id; }); toast('Hearing deleted'); render(); }
@@ -1581,6 +1598,128 @@
   };
   document.addEventListener('click', function (e) { var b = e.target.closest('[data-dashtab]'); if (!b) return; S.ui.dashTab = b.dataset.dashtab; render(); });
 
+  /* =====================================================================
+     LINKS: calendar sync, matter emails, prefilled documents, closing checklist, conflict check
+     ===================================================================== */
+
+  /* ----- Calendar entries kept in step with hearings and matter next steps ----- */
+  async function upsertAppt(key, row) {
+    var ex = S.appts.find(function (a) { return a.source_key === key; });
+    if (!row) { if (ex) { var d0 = await sb.from('appointments').delete().eq('id', ex.id); if (!d0.error) S.appts = S.appts.filter(function (a) { return a.id !== ex.id; }); } return; }
+    row.source_key = key;
+    var r = ex ? await sb.from('appointments').update(row).eq('id', ex.id).select().single() : await sb.from('appointments').insert(row).select().single();
+    if (!r.error) { upsertLocal(S.appts, r.data); S.appts.sort(function (a, b) { return D(a.starts_at) - D(b.starts_at); }); }
+  }
+  async function syncHearingAppt(h) {
+    if (!h.starts_at || h.status === 'cancelled') return upsertAppt('hearing:' + h.id, null);
+    var done = h.status === 'held' || h.status === 'finding_issued';
+    return upsertAppt('hearing:' + h.id, { starts_at: h.starts_at, duration_min: 180, kind: 'hearing', title: 'Disciplinary hearing: ' + h.employee_name, location: h.venue || null, status: done ? 'done' : 'scheduled', matter_id: h.matter_id || null, client_id: h.client_id || null, notes: h.charges || null });
+  }
+  async function syncMatterNext(m) {
+    var key = 'matter-next:' + m.id;
+    if (!m.next_date || m.stage === 'Closed') return upsertAppt(key, null);
+    var kind = /court/i.test(m.forum || '') ? 'court' : /ccma|council/i.test(m.forum || '') ? 'ccma' : /hearing/i.test(m.forum || '') ? 'hearing' : 'meeting';
+    var ex = S.appts.find(function (a) { return a.source_key === key; });
+    var start = D(m.next_date);
+    if (ex) { var old = D(ex.starts_at); start.setHours(old.getHours(), old.getMinutes()); } else start.setHours(9, 0);
+    return upsertAppt(key, { starts_at: start.toISOString(), duration_min: ex ? ex.duration_min : 120, kind: kind, title: (m.next_step || 'Next step') + ' (' + m.ref + ')', location: ex ? ex.location : (kind === 'ccma' ? (m.forum === 'CCMA' ? 'CCMA' : 'Bargaining council') : kind === 'court' ? 'Labour Court, Johannesburg' : null), status: 'scheduled', matter_id: m.id, client_id: m.client_id || null });
+  }
+  P2['confirm-appt'] = async function (el) {
+    var a = byId(S.appts, el.dataset.id);
+    var r = await sb.from('appointments').update({ status: 'scheduled' }).eq('id', a.id).select().single(); if (r.error) { toast(r.error.message); return; }
+    upsertLocal(S.appts, r.data);
+    var l = a.lead_id && byId(S.leads, a.lead_id);
+    if (l && (l.status === 'new' || l.status === 'contacted')) { var lr = await sb.from('leads').update({ status: 'consultation_booked' }).eq('id', l.id).select().single(); if (!lr.error) upsertLocal(S.leads, lr.data); }
+    toast('Confirmed for ' + fmtDT(a.starts_at)); render();
+  };
+
+  /* ----- Emails found by matter reference or case number (searches the mailbox live) ----- */
+  var matterTerms = function (m) { return [m.ref, m.case_no].filter(function (x) { return x && x.length >= 5 && !/^(—|-|not yet)/i.test(x); }); };
+  function matterEmails(m) {
+    var terms = matterTerms(m), cache = S.mailSearch = S.mailSearch || {};
+    if (S.mail.state === 'unconfigured') return '<p class="meta">Connect the info@ mailbox (Company settings → Email) to see this matter’s emails here.</p>';
+    if (!terms.length) return '<p class="meta">Add a case number to the matter so its emails can be found.</p>';
+    var c = cache[m.id];
+    if (!c) { cache[m.id] = { loading: true }; Promise.all(terms.map(function (q) { return api('/api/mail?action=search&q=' + encodeURIComponent(q)); })).then(function (rs) { var bad = rs.find(function (x) { return x.configured === false || x.error; }); var seen = {}, list = []; rs.forEach(function (x) { (x.messages || []).forEach(function (e) { if (!seen[e.uid]) { seen[e.uid] = 1; list.push(e); } }); }); list.sort(function (a, b) { return a.date < b.date ? 1 : -1; }); cache[m.id] = bad ? { error: bad.configured === false ? 'unconfigured' : bad.error } : { list: list }; if (location.hash === '#matter=' + m.id) render(); }); return '<p class="meta">Searching the mailbox for ' + terms.map(esc).join(' or ') + '…</p>'; }
+    if (c.loading) return '<p class="meta">Searching the mailbox…</p>';
+    if (c.error) return c.error === 'unconfigured' ? '<p class="meta">Connect the info@ mailbox (Company settings → Email) to see this matter’s emails here.</p>' : '<div class="callout p-red">' + esc(c.error) + '</div>';
+    return '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px"><span class="meta">Emails in info@ that mention ' + terms.map(function (t) { return '<b>' + esc(t) + '</b>'; }).join(' or ') + '. Put the matter reference in your email subjects so replies are found too.</span><button class="btn sm" data-act="matter-mail-refresh" data-matter="' + m.id + '">Search again</button></div><div class="list">' +
+      (c.list.map(function (e) { return '<button class="row" data-act="matter-mail-open" data-uid="' + e.uid + '" style="border:0;border-bottom:1px solid var(--line);background:none;text-align:left;cursor:pointer;width:100%"><div class="grow"><b>' + esc(e.subject) + '</b><div class="meta">' + esc(who(e.from)) + ' · ' + fmtDT(e.date) + '</div></div></button>'; }).join('') || empty('No emails mention this matter yet.')) + '</div>';
+  }
+  P2['matter-mail-refresh'] = function (el) { delete (S.mailSearch || {})[el.dataset.matter]; render(); };
+  P2['matter-mail-open'] = function (el) { S.ui.inboxTab = 'Email (info@)'; location.hash = 'inbox'; setTimeout(function () { P2['mail-open']({ dataset: { uid: el.dataset.uid } }); }, 50); };
+  function mailMatter(subject) { var s = (subject || '').toLowerCase(); return S.matters.find(function (m) { return matterTerms(m).some(function (t) { return s.indexOf(t.toLowerCase()) >= 0; }); }); }
+
+  /* ----- Documents prefilled from the matter ----- */
+  P2['matter-doc'] = function (el) { var m = byId(S.matters, el.dataset.matter); S.ui.dTab = 'Create a document'; S.ui.ctType = el.dataset.type; S.ui.ctMatter = m.id; S.ui.ctClient = m.client_id || ''; location.hash = 'documents'; };
+  function fillContractDefaults() {
+    var type = $('ct-type') && $('ct-type').value; if (!type) return;
+    var m = byId(S.matters, $('ct-matter').value); if (!m) return;
+    var c = byId(S.clients, m.client_id) || {}, emp = m.acting_for === 'employee';
+    var defaults = { 'Employer': emp ? m.other_party : c.name, 'Employee': emp ? c.name : m.other_party, 'Case number': m.case_no && !/^(—|not yet)/i.test(m.case_no) ? m.case_no : '', 'Fee arrangement': m.fee_arrangement, 'Scope of work': [m.dispute_type, m.title].filter(Boolean).join(': '), 'Normal hourly rate': S.settings && S.settings.hourly_rate ? R2(S.settings.hourly_rate) : '' };
+    CONTRACTS[type].fields.forEach(function (f, i) { var inp = $('ct-f' + i); if (inp && !inp.value && defaults[f]) inp.value = defaults[f]; });
+  }
+
+  /* ----- Closing a matter ----- */
+  function closeMatterChecklist(m) {
+    var ub = S.time.filter(function (t) { return t.matter_id === m.id && unbilled(t); }), ubVal = ub.reduce(function (s, t) { return s + t.hours * t.rate; }, 0);
+    var openInv = S.invoices.filter(function (i) { return i.matter_id === m.id && ['sent', 'part', 'overdue', 'draft'].indexOf(invState(i).key) >= 0; });
+    var future = S.appts.filter(function (a) { return a.matter_id === m.id && ['scheduled', 'provisional'].indexOf(a.status) >= 0 && D(a.starts_at) >= today(); });
+    var c = byId(S.clients, m.client_id) || {}, review = S.settings && S.settings.google_review_link;
+    var line = function (ok, text, btn) { return '<div class="row" style="align-items:center">' + pill(ok ? 'Done' : 'Check', ok ? 'p-green' : 'p-amber') + '<div class="grow">' + text + '</div>' + (btn || '') + '</div>'; };
+    openForm({
+      title: 'Closing ' + m.ref, saveLabel: 'Finish', fields: [],
+      extra: '<div class="fld full"><p class="sub" style="margin:0 0 8px">Before you file this matter away:</p><div class="list">' +
+        line(!ub.length, ub.length ? ub.length + ' unbilled time entries worth <b>' + R2(ubVal) + '</b>' : 'No unbilled time', ub.length ? '<button type="button" class="btn sm pri" data-act="invoice-time" data-matter="' + m.id + '">Create final invoice</button>' : '') +
+        line(!openInv.length, openInv.length ? openInv.length + ' invoice(s) not fully paid: ' + openInv.map(function (i) { return esc(i.number) + ' (' + invState(i).label.toLowerCase() + ', ' + R2(invState(i).bal) + ')'; }).join(', ') : 'All invoices paid') +
+        line(!future.length, future.length ? future.length + ' future appointment(s) still in the calendar' : 'No future appointments', future.length ? '<label class="check" style="font-weight:400"><input type="checkbox" id="close-cancel" checked> Cancel them</label>' : '') +
+        line(c.fica_status === 'done', c.fica_status === 'done' ? 'FICA documents on file' : 'FICA documents not complete for ' + esc(c.name || 'the client')) +
+        '</div><div style="margin-top:12px">' + (review && c.email ? '<label class="check" style="font-weight:400"><input type="checkbox" id="close-review"> Email ' + esc(c.email) + ' a thank-you with a link to leave a Google review</label>' : '<span class="meta">' + (!review ? 'Add your Google review link in Company settings to send review requests when matters close.' : 'The client has no email address, so no review request can be sent.') + '</span>') + '</div></div>',
+      save: async function () {
+        if ($('close-cancel') && $('close-cancel').checked) { for (var i = 0; i < future.length; i++) { var r = await sb.from('appointments').update({ status: 'cancelled' }).eq('id', future[i].id).select().single(); if (!r.error) upsertLocal(S.appts, r.data); } }
+        if ($('close-review') && $('close-review').checked) {
+          var st = S.settings || {}, first = (c.contact_person || c.name || '').split(' ')[0];
+          var html = '<div style="font-family:Georgia,serif;font-size:16px;line-height:1.6;color:#1d1d1d;max-width:600px"><img src="https://labourlawalliance.co.za/assets/images/logo.png?v=2" width="160" alt="Labour Law Alliance"><p>Dear ' + esc(first) + ',</p><p>Thank you for trusting ' + esc(st.trading_name || 'Labour Law Alliance') + ' with your matter. It was a privilege to assist you.</p><p>If you were happy with our service, would you take a minute to leave us a Google review? It helps other people find the help they need.</p><p><a href="' + esc(review) + '" style="display:inline-block;background:#16203b;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none">Leave a review</a></p><p>Kind regards,<br>' + esc(st.trading_name || 'Labour Law Alliance') + '<br>' + esc(st.phone || '') + '</p></div>';
+          var err = await emailDoc(c.email, 'Thank you from ' + (st.trading_name || 'Labour Law Alliance'), html, 'Dear ' + first + ',\n\nThank you for trusting us with your matter. If you were happy with our service, please leave us a Google review: ' + review + '\n\nKind regards,\n' + (st.trading_name || ''));
+          if (err) return 'Matter closed, but the review email failed: ' + err;
+          toast('Review request sent to ' + c.email);
+        }
+        await syncMatterNext(m); render();
+      }
+    });
+  }
+
+  /* ----- Conflict check across clients, matters, hearings and enquiries ----- */
+  var norm = function (s) { return String(s || '').toLowerCase().replace(/\(pty\)|ltd|limited|inc|cc\b|[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); };
+  function conflicts(name, skip) {
+    var q = norm(name); skip = skip || {};
+    if (q.length < 4) return [];
+    var hit = function (s) { var n = norm(s); return n.length >= 4 && (n === q || n.indexOf(q) >= 0 || q.indexOf(n) >= 0); };
+    var out = [];
+    S.clients.forEach(function (c) { if (c.id !== skip.client && (hit(c.name) || hit(c.contact_person))) out.push({ text: 'Client: ' + c.name, risk: skip.otherParty ? 'high' : 'low', client: c.id }); });
+    S.matters.forEach(function (m) { if (m.id === skip.matter) return; if (hit(m.other_party)) out.push({ text: 'Other party on ' + m.ref + ' (' + m.title + '), where we act for the ' + m.acting_for, risk: skip.otherParty ? 'low' : 'high', matter: m.id }); });
+    S.hearings.forEach(function (h) { if (hit(h.employee_name)) out.push({ text: 'Employee in a disciplinary hearing for ' + clientName(h.client_id), risk: 'high', hearing: h.id }); });
+    S.leads.forEach(function (l) { if (l.id !== skip.lead && hit(leadName(l))) out.push({ text: 'Earlier enquiry from ' + leadName(l) + ' (' + fmt(l.created_at) + ')', risk: 'low', lead: l.id }); });
+    return out;
+  }
+  function conflictHtml(list) {
+    if (!list.length) return '<span style="color:var(--green)">No conflicts found.</span>';
+    var high = list.filter(function (x) { return x.risk === 'high'; });
+    return '<span style="color:var(--' + (high.length ? 'red' : 'amber') + ');font-weight:600">' + (high.length ? 'Possible conflict: ' : 'Already known: ') + '</span>' + list.slice(0, 4).map(function (x) { return esc(x.text); }).join('; ') + (list.length > 4 ? ' and ' + (list.length - 4) + ' more' : '');
+  }
+  function conflictHint(inputId, skip, value) {
+    var i = $(inputId), h = $(inputId + '-hint'); if (!h) return;
+    if (h.dataset.base == null) h.dataset.base = h.textContent;
+    var v = value != null ? value : (i && i.value);
+    if (!v || norm(v).length < 4) { h.textContent = h.dataset.base; return; }
+    h.innerHTML = conflictHtml(conflicts(v, skip));
+  }
+  function conflictPanel(name, skip) { var list = conflicts(name, skip); if (!list.length) return ''; var high = list.some(function (x) { return x.risk === 'high'; }); return '<div class="callout ' + (high ? 'p-red' : 'p-amber') + '">' + conflictHtml(list) + '</div>'; }
+
+  /* ----- Show the linked matter on inbox emails ----- */
+  var _mailView = mailView;
+  mailView = function () { var html = _mailView(); return html.replace(/data-act="mail-open" data-uid="(\d+)">([\s\S]*?)<\/button>/g, function (all, uid, inner) { var e = S.mail.list.find(function (x) { return String(x.uid) === uid; }); var m = e && mailMatter(e.subject); return m ? all.replace('</span></span></button>', '</span><span style="display:flex;gap:6px;margin-top:4px">' + pill(m.ref, 'p-blue') + '</span></span></button>') : all; }); };
+
   /* ---------- Router ---------- */
   function current() { var h = location.hash.slice(1); if (h.indexOf('matter=') === 0) return 'matters'; if (h.indexOf('lead=') === 0) return 'inbox'; return V[h] ? h : 'dashboard'; }
   function render() {
@@ -1640,7 +1779,7 @@
     if (el.dataset.inboxtab) { S.ui.inboxTab = el.dataset.inboxtab; return render(); }
     if (el.dataset.mtab) { S.ui.matterTab = el.dataset.mtab; return render(); }
     if (el.dataset.week) { var dw = +el.dataset.week; S.ui.weekStart = dw ? addDays(S.ui.weekStart || weekStart(new Date()), dw) : weekStart(new Date()); return render(); }
-    if (el.dataset.stage) { var mid = location.hash.slice(8); var r4 = await sb.from('matters').update({ stage: el.dataset.stage }).eq('id', mid).select().single(); if (r4.error) { toast(r4.error.message); return; } upsertLocal(S.matters, r4.data); toast('Stage: ' + el.dataset.stage); return render(); }
+    if (el.dataset.stage) { var mid = location.hash.slice(8); var prevStage = (byId(S.matters, mid) || {}).stage; var r4 = await sb.from('matters').update({ stage: el.dataset.stage }).eq('id', mid).select().single(); if (r4.error) { toast(r4.error.message); return; } upsertLocal(S.matters, r4.data); toast('Stage: ' + el.dataset.stage); render(); if (el.dataset.stage === 'Closed' && prevStage !== 'Closed') closeMatterChecklist(r4.data); return; }
     if (el.dataset.lead) { e.preventDefault(); var l = byId(S.leads, el.dataset.lead); S.ui.inboxSel = l.id; markSeen(l); if (current() !== 'inbox') location.hash = 'inbox'; else render(); return; }
     if (el.dataset.client) { e.preventDefault(); $('modal-root').innerHTML = ''; return editClient(byId(S.clients, el.dataset.client)); }
     if (el.dataset.matter) { location.hash = 'matter=' + el.dataset.matter; return; }
