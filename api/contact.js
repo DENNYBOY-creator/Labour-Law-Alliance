@@ -92,7 +92,29 @@ export default async function handler(req, res) {
   // The visitor sees success if at least one of the two worked, so no enquiry is lost.
   const [saved, emailed] = await Promise.all([saveLead(form, ref, d, page, body.visit_ref !== undefined || body.visit_us ? visit : null), sendEmail()]);
   if (!saved && !emailed) return res.status(502).json({ error: 'Could not send message.' });
+  // Thank the visitor so they know the message arrived. A failure here never affects the response.
+  if (emailOk) await sendAck();
   return res.status(200).json({ ok: true });
+
+  async function sendAck() {
+    try {
+      const what = form === 'booking' ? 'appointment request' : form === 'enquiry' ? 'consultation enquiry' : 'message';
+      const office = CONTACT_TO.split(',').map((s) => s.trim())[0];
+      const r = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: CONTACT_FROM,
+          to: [d.email],
+          reply_to: office,
+          subject: `We've received your ${what} – Labour Law Alliance`,
+          html: renderAck({ name: d.first_name, what, form, when: form === 'booking' ? `${d.preferred_date} at ${d.preferred_time}` : '', ref: ref.slice(0, 8).toUpperCase() }),
+          text: `Dear ${d.first_name || 'Sir/Madam'},\n\nThank you for your ${what}. ${form === 'booking' ? `You asked for ${d.preferred_date} at ${d.preferred_time}. We will contact you to confirm the time.` : 'An attorney will contact you within one working day.'}\n\nIf it is urgent, call ${FIRM.phone} or WhatsApp ${FIRM.wa}.\n\nIf you have been dismissed, the time limit to refer an unfair dismissal dispute to the CCMA is 30 days from the date of dismissal, so please don't wait.\n\nYour reference: ${ref.slice(0, 8).toUpperCase()}\n\nLabour Law Alliance\n${FIRM.addr1}, ${FIRM.addr2}`,
+        }),
+      });
+      if (!r.ok) console.error('Acknowledgement email failed', r.status, await r.text());
+    } catch (err) { console.error('Acknowledgement email failed', err); }
+  }
 
   async function sendEmail() {
     try {
@@ -200,6 +222,37 @@ ${rows.map(([k, v]) => cell(k, v)).join('\n')}
 <tr><td style="padding:18px 40px;background:#16203b;font-family:${SANS};font-size:12px;line-height:1.6;color:#c9cfdb">
   Sent from the website form at <a href="https://${FIRM.web}" style="color:#d3a728;text-decoration:none">${FIRM.web}</a>. Reply to this email to respond to the sender directly.<br><a href="${SITE}/admin#lead=${esc(ref)}" style="color:#d3a728;text-decoration:none">Open this lead in the CRM &rarr;</a>
 </td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
+}
+
+// ---- Thank-you email to the person who filled in the form (same branded layout) ----
+function renderAck({ name, what, form, when, ref }) {
+  const p = (t) => `<tr><td style="padding:0 40px 14px;font-family:${SERIF};font-size:16px;line-height:1.6;color:#1d1d1d">${t}</td></tr>`;
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Thank you</title></head>
+<body style="margin:0;padding:0;background:#f1f1f1">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f1f1"><tr><td align="center" style="padding:32px 12px">
+<table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:100%;max-width:640px;background:#ffffff">
+<tr><td height="8" style="height:8px;line-height:8px;font-size:0;background:#16203b;background-image:linear-gradient(90deg,#16203b 0%,#349cfc 35%,#d3a728 70%,#fd5d14 100%)">&nbsp;</td></tr>
+<tr><td style="padding:32px 40px 0">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+    <td valign="middle" align="left" width="45%"><a href="https://${FIRM.web}"><img src="${FIRM.logo}" width="170" alt="Labour Law Alliance" style="display:block;width:170px;height:auto;border:0"></a></td>
+    <td valign="middle" align="right" style="font-family:${SANS};font-size:13px;line-height:1.6;color:#444">${FIRM.addr1}<br>${FIRM.addr2}<br><a href="tel:${FIRM.tel}" style="color:#444;text-decoration:none">${FIRM.phone}</a> (calls)<br><a href="${FIRM.waLink}" style="color:#444;text-decoration:none">${FIRM.wa}</a> (WhatsApp)</td>
+  </tr></table>
+</td></tr>
+<tr><td style="padding:30px 40px 0;font-family:${SANS};font-size:13px;font-weight:bold;letter-spacing:2px;color:#a07a12">WE'VE RECEIVED YOUR ${esc(what.toUpperCase())}</td></tr>
+<tr><td style="padding:12px 40px 22px"><div style="border-top:2px solid #1d1d1d;line-height:0;font-size:0">&nbsp;</div></td></tr>
+${p(`Dear ${esc(name || 'Sir/Madam')},`)}
+${p(form === 'booking'
+    ? `Thank you for booking a consultation. You asked for <b>${esc(when)}</b>. We will contact you shortly to confirm the time, or to suggest another if that slot is taken.`
+    : `Thank you for your ${esc(what)}. An attorney will contact you within one working day.`)}
+${p(`If it is urgent, call us on <a href="tel:${FIRM.tel}" style="${linkStyle}">${FIRM.phone}</a> or send a WhatsApp to <a href="${FIRM.waLink}" style="${linkStyle}">${FIRM.wa}</a>.`)}
+${p(`<b>Please note:</b> if you have been dismissed, the time limit to refer an unfair dismissal dispute to the CCMA is <b>30 days</b> from the date of dismissal. Don't wait until we speak if that date is close.`)}
+${p(`Your reference: <b>${esc(ref)}</b>`)}
+${p(`Kind regards,<br>Labour Law Alliance`)}
+<tr><td style="padding:18px 40px;background:#16203b;font-family:${SANS};font-size:12px;line-height:1.6;color:#c9cfdb">You are receiving this because you contacted us through <a href="https://${FIRM.web}" style="color:#d3a728;text-decoration:none">${FIRM.web}</a>. Reply to this email if you need to add anything.</td></tr>
 </table>
 </td></tr></table>
 </body></html>`;

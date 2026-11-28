@@ -51,6 +51,27 @@ export default async function handler(req, res) {
       return res.status(200).json({ configured: true, user: c.user, ...out });
     }
 
+    if (action === 'search') {
+      const q = String(req.query.q || '').trim().slice(0, 80);
+      if (q.length < 4) return res.status(400).json({ error: 'Search for at least 4 characters.' });
+      const out = await withImap(async (cl) => {
+        const lock = await cl.getMailboxLock('INBOX');
+        try {
+          const uids = (await cl.search({ or: [{ subject: q }, { body: q }] }, { uid: true })) || [];
+          const pick = uids.slice(-30);
+          const msgs = [];
+          if (pick.length) {
+            for await (const m of cl.fetch(pick.join(','), { uid: true, envelope: true, flags: true, internalDate: true }, { uid: true })) {
+              const e = m.envelope || {};
+              msgs.push({ uid: m.uid, subject: e.subject || '(no subject)', date: (e.date || m.internalDate || new Date()).toISOString(), from: (e.from || []).map((x) => ({ name: x.name || '', address: x.address || '' })), seen: m.flags ? m.flags.has('\\Seen') : false });
+            }
+          }
+          return msgs.reverse();
+        } finally { lock.release(); }
+      });
+      return res.status(200).json({ configured: true, messages: out });
+    }
+
     if (action === 'read') {
       const uid = Number(req.query.uid);
       if (!uid) return res.status(400).json({ error: 'Missing message.' });
