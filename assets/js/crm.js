@@ -175,35 +175,55 @@
   }
 
   /* ---------- Navigation ---------- */
-  var NAV = [
-    { grp: 'Overview' },
-    { id: 'mywork', label: 'My work', n: function () { return myTasks().filter(function (t) { return t.due_date && daysLeft(t.due_date) <= 0; }).length; }, hot: true },
-    { id: 'dashboard', label: 'Dashboard' },
-    { id: 'inbox', label: 'Inbox', n: function () { return S.leads.filter(function (l) { return !l.seen_at; }).length; }, hot: true },
-    { grp: 'Work' },
-    { id: 'pipeline', label: 'Pipeline', n: function () { return S.leads.filter(function (l) { return l.status === 'new'; }).length; } },
-    { id: 'matters', label: 'Matters', n: function () { return S.matters.filter(function (m) { return m.stage !== 'Closed'; }).length; } },
-    { id: 'deadlines', label: 'Deadlines', n: function () { return agenda().filter(function (d) { return d.left <= 7 && (d.kind === 'Time limit' || d.kind === 'Deadline' || d.kind === 'Diary'); }).length; }, hot: true },
-    { id: 'appointments', label: 'Appointments' },
-    { id: 'hearings', label: 'Hearings', n: function () { return S.hearings.filter(function (h) { return h.status === 'scheduled' && h.starts_at && daysLeft(h.starts_at) >= 0 && daysLeft(h.starts_at) <= 7; }).length; } },
-    { grp: 'Clients & money' },
-    { id: 'clients', label: 'Clients' },
-    { id: 'quotes', label: 'Quotes & invoices', n: function () { return S.invoices.filter(function (i) { return invState(i).key === 'overdue'; }).length; }, hot: true },
-    { id: 'payments', label: 'Payments' },
-    { grp: 'Growth' },
-    { id: 'website', label: 'Website' },
-    { grp: 'Firm' },
-    { id: 'documents', label: 'Document centre' },
-    { id: 'compliance', label: 'Employer compliance', n: function () { return S.compliance.filter(function (c) { return c.status === 'open' && daysLeft(c.due_date) <= 14; }).length; }, hot: true },
-    { id: 'settings', label: 'Company settings' }
-  ];
-  function renderNav(cur) {
-    $('nav').innerHTML = NAV.map(function (n) {
-      if (n.grp) return '<div class="grp">' + n.grp + '</div>';
-      var c = n.n ? n.n() : 0;
-      return '<a href="#' + n.id + '" class="' + (n.id === cur ? 'on' : '') + (n.soon ? ' soon' : '') + '">' + n.label + (n.soon ? '<span class="soon-tag">Soon</span>' : c ? '<span class="n' + (n.hot ? ' hot' : '') + '">' + c + '</span>' : '') + '</a>';
-    }).join('');
-  }
+var NAV = [
+  { grp: 'Your day' },
+  { id: 'mywork', label: 'My work', ic: 'sun', n: function () { return myTasks().filter(function (t) { return t.due_date && daysLeft(t.due_date) <= 0; }).length; }, hot: true },
+  { id: 'dashboard', label: 'Dashboard', ic: 'grid' },
+  { id: 'inbox', label: 'Inbox', ic: 'inbox', n: function () { return S.leads.filter(function (l) { return !l.seen_at; }).length; }, hot: true },
+  { id: 'appointments', label: 'Appointments', ic: 'cal' },
+  { id: 'deadlines', label: 'Deadlines', ic: 'clock', n: function () { return agenda().filter(function (d) { return d.left <= 7 && d.left >= 0 && /Time limit|Deadline|Diary|Task|Compliance/.test(d.kind); }).length; } },
+  { grp: 'Practice' },
+  { id: 'pipeline', label: 'Pipeline', ic: 'funnel', n: function () { return S.leads.filter(function (l) { return l.status === 'new'; }).length; } },
+  { id: 'matters', label: 'Matters', ic: 'brief', n: function () { return S.matters.filter(function (m) { return m.stage !== 'Closed'; }).length; } },
+  { id: 'hearings', label: 'Hearings', ic: 'gavel', n: function () { return S.hearings.filter(function (h) { return h.status === 'scheduled' && h.starts_at && daysLeft(h.starts_at) >= 0 && daysLeft(h.starts_at) <= 7; }).length; } },
+  { id: 'clients', label: 'Clients', ic: 'users' },
+  { grp: 'Money' },
+  { id: 'quotes', label: 'Quotes & invoices', ic: 'doc', n: function () { return S.invoices.filter(function (i) { return invState(i).key === 'overdue'; }).length; }, hot: true },
+  { id: 'payments', label: 'Payments', ic: 'wallet' },
+  { grp: 'Firm' },
+  { id: 'website', label: 'Website', ic: 'globe' },
+  { id: 'documents', label: 'Document centre', ic: 'folder' },
+  { id: 'compliance', label: 'Employer compliance', ic: 'shield', n: function () { return S.compliance.filter(function (c) { return c.status === 'open' && daysLeft(c.due_date) <= 14; }).length; }, hot: true },
+  { id: 'settings', label: 'Company settings', ic: 'cog' }
+];
+var ICONS = {
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  grid: '<rect x="3" y="3" width="7" height="9" rx="2"/><rect x="14" y="3" width="7" height="5" rx="2"/><rect x="14" y="12" width="7" height="9" rx="2"/><rect x="3" y="16" width="7" height="5" rx="2"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/>',
+  cal: '<rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  funnel: '<path d="M3 4h18l-7 8v6l-4 2v-8z"/>',
+  brief: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 13h18"/>',
+  gavel: '<path d="m14 13-7.5 7.5a2.1 2.1 0 0 1-3-3L11 10"/><path d="m16 16 6-6M8 8l6-6M9 7l8 8M21 11l-8-8"/>',
+  users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+  doc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
+  wallet: '<rect x="2" y="6" width="20" height="14" rx="3"/><path d="M2 10h20M16 15h2"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+  cog: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>', user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>', task: '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/>',
+  upload: '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>', key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M17 6l3 3"/>', out: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>', moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  side: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/>', arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>'
+};
+function icon(name, size) { return '<svg width="' + (size || 18) + '" height="' + (size || 18) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[name] || '') + '</svg>'; }
+function renderNav(cur) {
+  $('nav').innerHTML = NAV.map(function (n) {
+    if (n.grp) return '<div class="grp">' + n.grp + '</div>';
+    var c = n.n ? n.n() : 0;
+    return '<a href="#' + n.id + '" class="' + (n.id === cur ? 'on' : '') + '" title="' + esc(n.label) + '">' + icon(n.ic) + '<span class="lb">' + n.label + '</span>' + (c ? '<span class="n' + (n.hot ? ' hot' : '') + '">' + c + '</span><i class="dot"></i>' : '<svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m9 6 6 6-6 6"/></svg>') + '</a>';
+  }).join('');
+}
 
   var V = {};
 
@@ -456,13 +476,13 @@
     var provisional = S.appts.filter(function (a) { return a.status === 'provisional'; });
     var upcoming = S.appts.filter(function (a) { return D(a.starts_at) >= today(); });
     return head('Appointments', 'Consultations, meetings and set-downs', 'Website bookings wait below until you confirm them. CCMA dates and hearings linked to matters show here too.', '<button class="btn pri" data-act="new-appt">New appointment</button>') +
-      (provisional.length ? '<div class="panel" style="border-color:#d3a728"><div class="hd"><h2>Website bookings to confirm</h2><span class="meta">Already in the calendar as provisional. Confirm once you have spoken to the client.</span></div><div class="list">' + provisional.map(function (a) { var l = byId(S.leads, a.lead_id) || {}; return '<div class="row" style="align-items:center">' + dateBox(a.starts_at) + '<div class="grow"><b>' + esc(a.title) + '</b><div class="meta">' + fmtT(a.starts_at) + ' · ' + esc(a.location || '') + (l.service ? ' · ' + esc(l.service) : '') + '</div></div>' + phoneLinks(l.phone, l.email, 'Your consultation with Labour Law Alliance') + '<button class="btn sm" data-appt="' + a.id + '">Change</button><button class="btn sm pri" data-act="confirm-appt" data-id="' + a.id + '">Confirm</button></div>'; }).join('') + '</div></div>' : '') +
-      (pendingBookings.length ? '<div class="panel" style="border-color:#d3a728"><div class="hd"><h2>Website bookings without a time</h2></div><div class="list">' + pendingBookings.map(function (l) { return '<div class="row" style="align-items:center"><div class="grow"><b>' + esc(leadName(l)) + '</b><div class="meta">Asked for ' + esc(l.preferred_date || '') + ' ' + esc(l.preferred_time || '') + ' · ' + esc(l.meeting || '') + ' · ' + esc(l.service || '') + '</div></div>' + phoneLinks(l.phone, l.email, 'Your consultation with Labour Law Alliance') + '<button class="btn sm pri" data-act="lead-appt" data-id="' + l.id + '">Confirm</button></div>'; }).join('') + '</div></div>' : '') +
+      (provisional.length ? '<div class="panel" style="border-color:var(--accent)"><div class="hd"><h2>Website bookings to confirm</h2><span class="meta">Already in the calendar as provisional. Confirm once you have spoken to the client.</span></div><div class="list">' + provisional.map(function (a) { var l = byId(S.leads, a.lead_id) || {}; return '<div class="row" style="align-items:center">' + dateBox(a.starts_at) + '<div class="grow"><b>' + esc(a.title) + '</b><div class="meta">' + fmtT(a.starts_at) + ' · ' + esc(a.location || '') + (l.service ? ' · ' + esc(l.service) : '') + '</div></div>' + phoneLinks(l.phone, l.email, 'Your consultation with Labour Law Alliance') + '<button class="btn sm" data-appt="' + a.id + '">Change</button><button class="btn sm pri" data-act="confirm-appt" data-id="' + a.id + '">Confirm</button></div>'; }).join('') + '</div></div>' : '') +
+      (pendingBookings.length ? '<div class="panel" style="border-color:var(--accent)"><div class="hd"><h2>Website bookings without a time</h2></div><div class="list">' + pendingBookings.map(function (l) { return '<div class="row" style="align-items:center"><div class="grow"><b>' + esc(leadName(l)) + '</b><div class="meta">Asked for ' + esc(l.preferred_date || '') + ' ' + esc(l.preferred_time || '') + ' · ' + esc(l.meeting || '') + ' · ' + esc(l.service || '') + '</div></div>' + phoneLinks(l.phone, l.email, 'Your consultation with Labour Law Alliance') + '<button class="btn sm pri" data-act="lead-appt" data-id="' + l.id + '">Confirm</button></div>'; }).join('') + '</div></div>' : '') +
       '<div class="panel"><div class="hd"><h2>Week of ' + fmt(ws) + '</h2><div style="display:flex;gap:6px"><button class="btn sm" data-week="-7">← Previous</button><button class="btn sm" data-week="0">This week</button><button class="btn sm" data-week="7">Next →</button></div></div><div class="week">' +
       days.map(function (d) {
         var as = S.appts.filter(function (a) { return ymd(a.starts_at) === ymd(d); }).sort(function (a, b) { return D(a.starts_at) - D(b.starts_at); });
         return '<div class="day' + (ymd(d) === ymd(today()) ? ' today' : '') + '"><h3>' + d.toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' }) + '</h3>' + as.map(function (a) { return '<button class="appt k-' + a.kind + (a.status === 'cancelled' ? ' cancelled' : '') + '" data-appt="' + a.id + '"><span class="mono">' + fmtT(a.starts_at) + '</span><b style="font-size:13px">' + esc(a.title) + '</b><span class="meta">' + esc(a.location || kindLabel(a.kind)) + '</span></button>'; }).join('') + '</div>';
-      }).join('') + '</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' + KINDS.map(function (k) { return '<span class="pill" style="border-left:3px solid ' + ({ ccma: 'var(--red)', court: 'var(--red)', hearing: 'var(--amber)', consultation: '#d3a728' }[k[0]] || 'var(--blue)') + '">' + k[1] + '</span>'; }).join('') + '</div></div>' +
+      }).join('') + '</div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' + KINDS.map(function (k) { return '<span class="pill" style="border-left:3px solid ' + ({ ccma: 'var(--red)', court: 'var(--red)', hearing: 'var(--amber)', consultation: 'var(--accent)' }[k[0]] || 'var(--blue)') + '">' + k[1] + '</span>'; }).join('') + '</div></div>' +
       '<div class="panel"><div class="hd"><h2>All upcoming</h2></div><div class="tbl"><table><tr><th>When</th><th>What</th><th>Type</th><th>Where</th><th>Linked to</th><th>Status</th></tr>' + (upcoming.map(function (a) { var m = byId(S.matters, a.matter_id); return '<tr class="click" data-appt="' + a.id + '"><td class="mono">' + fmtDT(a.starts_at) + '</td><td><b>' + esc(a.title) + '</b></td><td>' + kindLabel(a.kind) + '</td><td>' + esc(a.location || '') + '</td><td>' + (m ? esc(m.ref) : a.client_id ? esc(clientName(a.client_id)) : '') + '</td><td>' + pill(a.status, a.status === 'scheduled' ? 'p-blue' : a.status === 'done' ? 'p-green' : '') + '</td></tr>'; }).join('') || '<tr><td colspan="6">' + empty('No upcoming appointments.') + '</td></tr>') + '</table></div></div>';
   };
   function apptFields() {
@@ -1065,10 +1085,10 @@
     var max = Math.max(1, Math.max.apply(null, series.reduce(function (a, s) { return a.concat(s.data); }, [])));
     var step = Math.pow(10, Math.floor(Math.log10(max / 4 || 1))); var tick = Math.max(1, Math.ceil(max / 4 / step) * step); var top = tick * 4;
     var x = function (i) { return pl + (n > 1 ? i * (W - pl - pr) / (n - 1) : 0); }, y = function (v) { return pt + (H - pt - pb) * (1 - v / top); };
-    var g = ''; for (var k = 0; k <= 4; k++) g += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(k * tick) + '" y2="' + y(k * tick) + '" stroke="var(--line)"/><text x="' + (pl - 6) + '" y="' + (y(k * tick) + 4) + '" text-anchor="end" fill="var(--muted)" font-size="11">' + (k * tick) + '</text>';
+    var g = ''; for (var k = 0; k <= 4; k++) g += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(k * tick) + '" y2="' + y(k * tick) + '" style="stroke:var(--line)"/><text x="' + (pl - 6) + '" y="' + (y(k * tick) + 4) + '" text-anchor="end" style="fill:var(--muted)" font-size="11">' + (k * tick) + '</text>';
     var marks = [0, Math.floor(n / 3), Math.floor(2 * n / 3), n - 1].filter(function (v, i, a) { return a.indexOf(v) === i; });
-    g += marks.map(function (i) { return '<text x="' + x(i) + '" y="' + (H - 6) + '" text-anchor="middle" fill="var(--muted)" font-size="11">' + esc(labels[i]) + '</text>'; }).join('');
-    g += series.map(function (s) { var pts = s.data.map(function (v, i) { return x(i).toFixed(1) + ',' + y(v).toFixed(1); }).join(' '); return (s.fill ? '<polygon points="' + x(0) + ',' + y(0) + ' ' + pts + ' ' + x(n - 1) + ',' + y(0) + '" fill="' + s.color + '" opacity=".14"/>' : '') + '<polyline points="' + pts + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-linejoin="round"/>'; }).join('');
+    g += marks.map(function (i) { return '<text x="' + x(i) + '" y="' + (H - 6) + '" text-anchor="middle" style="fill:var(--muted)" font-size="11">' + esc(labels[i]) + '</text>'; }).join('');
+    g += series.map(function (s) { var pts = s.data.map(function (v, i) { return x(i).toFixed(1) + ',' + y(v).toFixed(1); }).join(' '); return (s.fill ? '<polygon points="' + x(0) + ',' + y(0) + ' ' + pts + ' ' + x(n - 1) + ',' + y(0) + '" style="fill:' + s.color + '" opacity=".16"/>' : '') + '<polyline points="' + pts + '" style="fill:none;stroke:' + s.color + '" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>'; }).join('');
     return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block" role="img" aria-label="chart">' + g + '</svg>';
   }
   function bars(rows, unit) { var max = Math.max(1, Math.max.apply(null, rows.map(function (r) { return r[1]; }))); return rows.map(function (r) { return '<div class="row" style="align-items:center;padding:5px 0"><div class="grow" style="word-break:break-all">' + esc(r[0]) + '</div><div style="flex:0 0 110px" class="bar"><i style="width:' + (r[1] / max * 100) + '%"></i></div><span class="mono" style="width:56px;text-align:right">' + r[1] + (unit || '') + '</span></div>'; }).join('') || empty('No data yet.'); }
@@ -1099,7 +1119,7 @@
     var leads30 = S.leads.filter(function (l) { return D(l.created_at) >= addDays(today(), -(S.web.days - 1)) && l.source && l.source !== 'Phone call'; }).length;
     return (v.length ? '' : '<div class="callout p-blue">Visitor counting started with this update. Numbers appear here as people visit the website.</div>') +
       '<div class="grid g4"><div class="panel stat"><b>' + nSess + '</b><span>Visits, last ' + S.web.days + ' days</span></div><div class="panel stat"><b>' + v.length + '</b><span>Pages viewed</span></div><div class="panel stat"><b>' + Object.keys(live).length + '</b><span>On the site now</span></div><div class="panel stat"><b>' + (nSess ? (leads30 / nSess * 100).toFixed(1) : '0.0') + '%</b><span>Visits that sent an enquiry</span></div></div>' +
-      '<div class="panel"><div class="hd"><h2>Visits per day</h2><span class="meta"><span style="color:#d3a728">■</span> visits <span style="color:var(--blue)">■</span> page views</span></div>' + lineChart(days.map(function (d) { return fmt(d).replace(/ \d{4}$/, ''); }), [{ data: viewsDay, color: 'var(--blue)' }, { data: perDay, color: '#d3a728', fill: true }]) + '</div>' +
+      '<div class="panel"><div class="hd"><h2>Visits per day</h2><span class="meta"><span style="color:var(--accent)">■</span> visits <span style="color:var(--blue)">■</span> page views</span></div>' + lineChart(days.map(function (d) { return fmt(d).replace(/ \d{4}$/, ''); }), [{ data: viewsDay, color: 'var(--blue)' }, { data: perDay, color: 'var(--accent)', fill: true }]) + '</div>' +
       '<div class="grid g3"><div class="panel"><h2 style="margin-bottom:6px">Where visitors come from</h2>' + bars(countBy(landings, function (p) { return p.source; }).slice(0, 10)) + '</div><div class="panel"><h2 style="margin-bottom:6px">Most viewed pages</h2>' + bars(countBy(v, function (p) { return p.path; }).slice(0, 10)) + '</div><div class="panel"><h2 style="margin-bottom:6px">Devices</h2>' + bars(countBy(landings, function (p) { return { mobile: 'Phone', tablet: 'Tablet', desktop: 'Computer' }[p.device]; })) + '<h2 style="margin:14px 0 6px">Cities</h2>' + bars(countBy(landings, function (p) { return p.city ? p.city + (p.country && p.country !== 'ZA' ? ' (' + p.country + ')' : '') : null; }).slice(0, 8)) + '</div></div>' +
       '<p class="meta">Counted without cookies or IP addresses. Visitors who switch analytics off in the cookie banner are not counted. Search engines and bots are ignored.</p>';
   }
@@ -1138,7 +1158,7 @@
     var clicks = sum(g.byDate, 'clicks'), imp = sum(g.byDate, 'impressions'), pos = imp ? g.byDate.reduce(function (s, r) { return s + r.position * r.impressions; }, 0) / imp : 0;
     return '<div class="banner"><span class="led"></span><b>Connected</b><span class="meta">' + esc(g.account) + ' · ' + fmt(g.start) + ' to ' + fmt(g.end) + ' (Google data runs about 2 days behind)</span></div>' +
       '<div class="grid g4"><div class="panel stat"><b>' + clicks + '</b><span>Clicks from Google</span></div><div class="panel stat"><b>' + imp + '</b><span>Times shown in Google</span></div><div class="panel stat"><b>' + (imp ? (clicks / imp * 100).toFixed(1) : '0') + '%</b><span>Click-through rate</span></div><div class="panel stat"><b>' + (pos ? pos.toFixed(1) : '—') + '</b><span>Average position</span></div></div>' +
-      '<div class="panel"><div class="hd"><h2>Clicks and impressions per day</h2><span class="meta"><span style="color:#d3a728">■</span> clicks <span style="color:var(--blue)">■</span> impressions ÷ 10</span></div>' + lineChart(g.byDate.map(function (r) { return fmt(r.date).replace(/ \d{4}$/, ''); }), [{ data: g.byDate.map(function (r) { return Math.round(r.impressions / 10); }), color: 'var(--blue)' }, { data: g.byDate.map(function (r) { return r.clicks; }), color: '#d3a728', fill: true }]) + '</div>' +
+      '<div class="panel"><div class="hd"><h2>Clicks and impressions per day</h2><span class="meta"><span style="color:var(--accent)">■</span> clicks <span style="color:var(--blue)">■</span> impressions ÷ 10</span></div>' + lineChart(g.byDate.map(function (r) { return fmt(r.date).replace(/ \d{4}$/, ''); }), [{ data: g.byDate.map(function (r) { return Math.round(r.impressions / 10); }), color: 'var(--blue)' }, { data: g.byDate.map(function (r) { return r.clicks; }), color: 'var(--accent)', fill: true }]) + '</div>' +
       '<div class="grid g2"><div class="panel"><h2 style="margin-bottom:6px">Top searches</h2><div class="tbl"><table><tr><th>Search</th><th style="text-align:right">Clicks</th><th style="text-align:right">Shown</th><th style="text-align:right">Position</th></tr>' + g.queries.slice(0, 20).map(function (q) { return '<tr><td>' + esc(q.query) + '</td><td class="mono" style="text-align:right">' + q.clicks + '</td><td class="mono" style="text-align:right">' + q.impressions + '</td><td class="mono" style="text-align:right">' + q.position.toFixed(1) + '</td></tr>'; }).join('') + '</table></div></div>' +
       '<div class="panel"><h2 style="margin-bottom:6px">Top pages</h2><div class="tbl"><table><tr><th>Page</th><th style="text-align:right">Clicks</th><th style="text-align:right">Shown</th><th style="text-align:right">Position</th></tr>' + g.pages.slice(0, 20).map(function (p) { return '<tr><td style="word-break:break-all">' + esc(p.page.replace(/^https?:\/\/[^/]+/, '') || '/') + '</td><td class="mono" style="text-align:right">' + p.clicks + '</td><td class="mono" style="text-align:right">' + p.impressions + '</td><td class="mono" style="text-align:right">' + p.position.toFixed(1) + '</td></tr>'; }).join('') + '</table></div></div></div>';
   }
@@ -1593,7 +1613,7 @@
       var per = days.map(function (d) { var s = {}; v.forEach(function (p) { if (ymd(p.created_at) === d) s[p.session || p.created_at] = 1; }); return Object.keys(s).length; });
       var sess = {}; v.forEach(function (p) { sess[p.session || p.created_at] = 1; });
       return title + '<div class="grid g4"><div class="panel stat"><b>' + Object.keys(sess).length + '</b><span>Visits, last ' + S.web.days + ' days</span></div><div class="panel stat"><b>' + v.length + '</b><span>Pages viewed</span></div><div class="panel stat"><b>' + S.leads.filter(function (l) { return l.page && D(l.created_at) >= addDays(today(), -(S.web.days - 1)); }).length + '</b><span>Website enquiries, same period</span></div><div class="panel stat"><b>' + (S.web.gsc && S.web.gsc.connected ? S.web.gsc.byDate.reduce(function (s, r) { return s + r.clicks; }, 0) : '—') + '</b><span>Google clicks, 28 days</span></div></div>' +
-        '<div class="panel"><div class="hd"><h2>Visits, last 14 days</h2><a href="#website">Website</a></div>' + lineChart(days.map(function (d) { return fmt(d).replace(/ \d{4}$/, ''); }), [{ data: per, color: '#d3a728', fill: true }]) + '</div>';
+        '<div class="panel"><div class="hd"><h2>Visits, last 14 days</h2><a href="#website">Website</a></div>' + lineChart(days.map(function (d) { return fmt(d).replace(/ \d{4}$/, ''); }), [{ data: per, color: 'var(--accent)', fill: true }]) + '</div>';
     }
     var feesM = S.payments.filter(function (p) { return p.account === 'business' && D(p.received_on) >= monthStart; }).reduce(function (s, p) { return s + Number(p.amount); }, 0);
     var feesL = S.payments.filter(function (p) { return p.account === 'business' && D(p.received_on) >= lastStart && D(p.received_on) < monthStart; }).reduce(function (s, p) { return s + Number(p.amount); }, 0);
@@ -1603,7 +1623,7 @@
     var perM = months.map(function (m0, ix) { var m1 = ix < 5 ? months[ix + 1] : new Date(today().getFullYear(), today().getMonth() + 1, 1); return S.payments.filter(function (p) { return p.account === 'business' && D(p.received_on) >= m0 && D(p.received_on) < m1; }).reduce(function (s, p) { return s + Number(p.amount); }, 0); });
     var byClient = {}; S.payments.filter(function (p) { return p.account === 'business'; }).forEach(function (p) { var n = clientName(p.client_id); byClient[n] = (byClient[n] || 0) + Number(p.amount); });
     return title + '<div class="grid g4"><div class="panel stat"><b>' + R2(feesM) + '</b><span>Fees received this month (last month ' + R2(feesL) + ')</span></div><div class="panel stat"><b>' + R2(owed) + '</b><span>Owed by clients</span></div><div class="panel stat"><b style="color:var(--red)">' + R2(od) + '</b><span>Overdue</span></div><div class="panel stat"><b>' + R2(S.time.filter(unbilled).reduce(function (s, t) { return s + t.hours * t.rate; }, 0)) + '</b><span>Unbilled time</span></div></div>' +
-      '<div class="grid g2"><div class="panel"><div class="hd"><h2>Fees received, last 6 months</h2><a href="#payments">Payments</a></div>' + lineChart(months.map(function (m0) { return m0.toLocaleDateString('en-ZA', { month: 'short' }); }), [{ data: perM.map(function (x) { return Math.round(x); }), color: '#d3a728', fill: true }]) + '</div><div class="panel"><div class="hd"><h2>Fees by client</h2></div>' + bars(Object.keys(byClient).map(function (n) { return [n, Math.round(byClient[n])]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 8)).replace(/(\d+)<\/span><\/div>/g, function (m, n) { return R2(n) + '</span></div>'; }) + '</div></div>';
+      '<div class="grid g2"><div class="panel"><div class="hd"><h2>Fees received, last 6 months</h2><a href="#payments">Payments</a></div>' + lineChart(months.map(function (m0) { return m0.toLocaleDateString('en-ZA', { month: 'short' }); }), [{ data: perM.map(function (x) { return Math.round(x); }), color: 'var(--accent)', fill: true }]) + '</div><div class="panel"><div class="hd"><h2>Fees by client</h2></div>' + bars(Object.keys(byClient).map(function (n) { return [n, Math.round(byClient[n])]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 8)).replace(/(\d+)<\/span><\/div>/g, function (m, n) { return R2(n) + '</span></div>'; }) + '</div></div>';
   };
   document.addEventListener('click', function (e) { var b = e.target.closest('[data-dashtab]'); if (!b) return; S.ui.dashTab = b.dataset.dashtab; render(); });
 
@@ -1818,6 +1838,7 @@
     else if (tab === 'Tasks I gave others') body = '<div class="panel">' + taskList(S.tasks.filter(function (t) { return (t.created_by || '').toLowerCase() === me && (t.assigned_to || '').toLowerCase() !== me; })) + '</div>';
     else { var who = S.ui.mwWho || ''; body = '<div class="panel"><div class="hd"><h2>All open tasks</h2><select id="mw-who" style="max-width:240px"><option value="">Everyone</option>' + S.staff.map(function (s) { return '<option value="' + esc(s.email) + '"' + (s.email === who ? ' selected' : '') + '>' + esc(s.full_name || s.email) + '</option>'; }).join('') + '</select></div>' + taskList(S.tasks.filter(function (t) { return t.status === 'open' && (!who || t.assigned_to === who); })) + '</div>'; }
     return head('My work', 'Hello' + (S.me && S.me.full_name ? ', ' + esc(S.me.full_name.split(' ')[0]) : ''), 'Your tasks, your matters and what is coming up on them.', '<button class="btn pri" data-act="new-task">New task</button>') +
+      (function () { var dueNow = S.tasks.filter(function (t) { return (t.assigned_to || '').toLowerCase() === me && t.due_date && daysLeft(t.due_date) <= 0; }); var doneToday = dueNow.filter(function (t) { return t.status === 'done' && t.done_at && ymd(t.done_at) === ymd(today()); }); var openNow = dueNow.filter(function (t) { return t.status === 'open'; }); var tot = doneToday.length + openNow.length; var pct = tot ? doneToday.length / tot : 0; return '<div class="panel" style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">' + ring(pct, Math.round(pct * 100) + '%', 'done') + '<div><div style="font-size:26px;font-weight:800;letter-spacing:-.5px">' + doneToday.length + ' of ' + tot + '</div><div class="meta">' + (tot ? (openNow.length ? openNow.length + ' task' + (openNow.length > 1 ? 's' : '') + ' still open for today' : 'Everything due today is done') : 'Nothing due today') + '</div></div></div>'; })() +
       '<div class="grid g4"><div class="panel stat"><b style="color:var(--red)">' + mine.filter(function (t) { return t.due_date && daysLeft(t.due_date) < 0; }).length + '</b><span>My overdue tasks</span></div><div class="panel stat"><b>' + mine.filter(function (t) { return t.due_date && daysLeft(t.due_date) === 0; }).length + '</b><span>Due today</span></div><div class="panel stat"><b>' + mine.length + '</b><span>My open tasks</span></div><div class="panel stat"><b>' + mineM.length + '</b><span>My open matters</span></div></div>' + tabs + body;
   };
   document.addEventListener('click', function (e) { var b = e.target.closest('[data-mwtab]'); if (!b) return; S.ui.mwTab = b.dataset.mwtab; render(); });
@@ -1957,16 +1978,40 @@
     push('Appointments', S.appts.filter(function (a) { return has(a.title, a.location); }).map(function (a) { return ['appt:' + a.id, a.title, fmtDT(a.starts_at)]; }));
     return g;
   }
-  function showSearch(q) {
-    var g = searchAll(q), root = $('modal-root');
-    if (!q.trim()) { closePop(); return; }
-    root.innerHTML = '<div class="pop" id="pop"><div class="ph"><b>Results for “' + esc(q) + '”</b><span class="meta">Enter opens the first · Esc closes</span></div>' +
-      (g.length ? g.map(function (x) { return '<div class="grp">' + x[0] + '</div>' + x[1].map(function (r) { return '<button class="hit" data-go="' + esc(r[0]) + '"><span style="min-width:0"><b>' + esc(r[1]) + '</b><span class="meta" style="display:block">' + esc(r[2] || '') + '</span></span></button>'; }).join(''); }).join('') : '<div class="empty">Nothing found.</div>') +
-      (S.mail.state === 'ok' && q.trim().length >= 4 ? '<div class="grp">Emails</div><button class="hit" data-go="mail:' + esc(q.trim()) + '"><span>Search info@ for “' + esc(q.trim()) + '”</span></button>' : '') + '</div>';
+  /* ----- Command palette (⌘K / Ctrl+K / "/") ----- */
+  var PAL = { sel: 0, items: [] };
+  function palItems(q) {
+    var n = q.trim().toLowerCase(), out = [];
+    var pages = NAV.filter(function (x) { return x.id; }).map(function (x) { return { go: '#' + x.id, t: x.label, s: { mywork: 'Your tasks and matters', dashboard: 'Practice, sales, website, finance', inbox: 'Website forms and email', appointments: 'Calendar and bookings', deadlines: 'Time limits and diary', pipeline: 'Enquiry to client', matters: 'Every case by stage', hearings: 'Disciplinary hearings', clients: 'Employers and individuals', quotes: 'Quotes, invoices, unbilled time', payments: 'Money in and owed', website: 'Visitors, sources, SEO', documents: 'Files and contract builder', compliance: 'Employer obligations', settings: 'Firm, banking, users, email' }[x.id] || '', ic: x.ic, grp: 'Go to' }; });
+    if (!n) return pages.concat([{ go: 'act:new-lead', t: 'New enquiry', s: 'Phone, WhatsApp or walk-in', ic: 'plus', grp: 'Create' }, { go: 'act:new-matter', t: 'New matter', ic: 'brief', grp: 'Create' }, { go: 'act:new-task', t: 'New task', ic: 'task', grp: 'Create' }, { go: 'act:new-appt', t: 'New appointment', ic: 'cal', grp: 'Create' }, { go: 'act:new-invoice', t: 'New invoice', ic: 'doc', grp: 'Create' }]);
+    pages.forEach(function (p) { if (p.t.toLowerCase().indexOf(n) >= 0 || p.s.toLowerCase().indexOf(n) >= 0) out.push(p); });
+    var icFor = { Clients: 'users', Matters: 'brief', Enquiries: 'inbox', 'Invoices & quotes': 'doc', Hearings: 'gavel', Tasks: 'task', Documents: 'folder', Appointments: 'cal' };
+    searchAll(q).forEach(function (g) { g[1].forEach(function (r) { out.push({ go: r[0], t: r[1], s: r[2], ic: icFor[g[0]] || 'arrow', grp: g[0] }); }); });
+    if (S.mail.state === 'ok' && n.length >= 4) out.push({ go: 'mail:' + q.trim(), t: 'Search info@ for “' + q.trim() + '”', ic: 'inbox', grp: 'Email' });
+    return out;
   }
-  function closePop() { var p = $('pop'); if (p) $('modal-root').innerHTML = ''; }
+  function drawPalette() {
+    var q = $('pal-in').value, items = PAL.items = palItems(q), last = '';
+    if (PAL.sel >= items.length) PAL.sel = Math.max(0, items.length - 1);
+    $('pal-res').innerHTML = items.map(function (it, i) { var g = it.grp !== last ? '<div class="grp">' + esc(it.grp) + '</div>' : ''; last = it.grp; return g + '<button class="hit' + (i === PAL.sel ? ' sel' : '') + '" data-pi="' + i + '"><span class="ic">' + icon(it.ic, 16) + '</span><span style="min-width:0;flex:1"><b style="display:block">' + esc(it.t) + '</b>' + (it.s ? '<span class="meta" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(it.s) + '</span>' : '') + '</span><span class="go">' + icon('arrow', 16) + '</span></button>'; }).join('') || '<div class="empty">Nothing found for “' + esc(q) + '”.</div>';
+    var s = $('pal-res').querySelector('.hit.sel'); if (s) s.scrollIntoView({ block: 'nearest' });
+  }
+  function openPalette(prefill) {
+    closePop();
+    var root = document.createElement('div'); root.id = 'palette'; root.className = 'palette-bg';
+    root.innerHTML = '<div class="palette" role="dialog" aria-label="Search"><div class="pin"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="color:var(--faint)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="pal-in" placeholder="Search clients, matters, case numbers, invoices, tasks…" autocomplete="off"><kbd>esc</kbd></div><div class="pres" id="pal-res"></div><div class="pfoot"><span><kbd>↑</kbd> <kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> close</span></div></div>';
+    document.body.appendChild(root);
+    PAL.sel = 0; $('pal-in').value = prefill || ''; drawPalette(); $('pal-in').focus();
+    $('pal-in').addEventListener('input', function () { PAL.sel = 0; drawPalette(); });
+    root.addEventListener('mousedown', function (e) { if (e.target === root) closePalette(); });
+    root.addEventListener('click', function (e) { var b = e.target.closest('[data-pi]'); if (b) runPal(+b.dataset.pi); });
+    root.addEventListener('mousemove', function (e) { var b = e.target.closest('[data-pi]'); if (b && +b.dataset.pi !== PAL.sel) { PAL.sel = +b.dataset.pi; root.querySelectorAll('.hit').forEach(function (h) { h.classList.toggle('sel', +h.dataset.pi === PAL.sel); }); } });
+  }
+  function closePalette() { var p = $('palette'); if (p) p.remove(); }
+  function runPal(i) { var it = PAL.items[i]; if (!it) return; closePalette(); if (it.go.indexOf('act:') === 0) { var fake = document.createElement('button'); fake.dataset.act = it.go.slice(4); document.body.appendChild(fake); fake.click(); fake.remove(); return; } go(it.go); }
+  function closePop() { var p = $('pop'); if (p) p.remove(); }
   async function go(target) {
-    closePop(); $('gsearch').value = ''; $('gsearch').blur();
+    closePop();
     var p = target.split(':');
     if (target[0] === '#') { location.hash = target.slice(1); return; }
     if (p[0] === 'lead') { var l = byId(S.leads, p[1]); S.ui.inboxSel = l.id; S.ui.inboxTab = 'All'; location.hash = 'inbox'; render(); return; }
@@ -1977,11 +2022,104 @@
     if (p[0] === 'docfile') return P2['doc-open']({ dataset: { id: p[1] } });
     if (p[0] === 'mail') { var q = target.slice(5); var j = await api('/api/mail?action=search&q=' + encodeURIComponent(q)); S.ui.inboxTab = 'Email (info@)'; S.mail.list = j.messages || S.mail.list; location.hash = 'inbox'; render(); toast((j.messages || []).length + ' emails found for “' + q + '”'); }
   }
-  var gs = $('gsearch'), gsT;
-  gs.addEventListener('input', function () { clearTimeout(gsT); gsT = setTimeout(function () { showSearch(gs.value); }, 120); });
-  gs.addEventListener('keydown', function (e) { if (e.key === 'Escape') { gs.value = ''; closePop(); gs.blur(); } if (e.key === 'Enter') { var f = document.querySelector('#pop [data-go]'); if (f) go(f.dataset.go); } });
-  document.addEventListener('keydown', function (e) { if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && !$('mform')) { e.preventDefault(); gs.focus(); } });
-  document.addEventListener('click', function (e) { var b = e.target.closest('[data-go]'); if (b) { go(b.dataset.go); return; } if ($('pop') && !e.target.closest('#pop') && e.target !== gs && !e.target.closest('#bell')) closePop(); });
+  document.addEventListener('keydown', function (e) {
+    var pal = $('palette');
+    if (pal) {
+      if (e.key === 'Escape') { e.preventDefault(); closePalette(); }
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); PAL.sel = Math.max(0, Math.min(PAL.items.length - 1, PAL.sel + (e.key === 'ArrowDown' ? 1 : -1))); drawPalette(); }
+      else if (e.key === 'Enter') { e.preventDefault(); runPal(PAL.sel); }
+      return;
+    }
+    if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (S.user) openPalette(); return; }
+    if (e.key === '/' && S.user && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && !$('mform')) { e.preventDefault(); openPalette(); }
+    if (e.key === 'Escape' && $('pop')) closePop();
+  });
+  document.addEventListener('click', function (e) { var b = e.target.closest('[data-go]'); if (b) { go(b.dataset.go); return; } if ($('pop') && !e.target.closest('#pop') && !e.target.closest('#bell,#btn-new,#avatar-btn,#me-card')) closePop(); });
+
+  /* ----- Shell: popovers, theme, sidebar ----- */
+  function popover(html, anchor, cls) {
+    closePop();
+    var el = document.createElement('div'); el.id = 'pop'; el.className = 'pop ' + (cls || ''); el.innerHTML = html; document.body.appendChild(el);
+    if (anchor) { var r = anchor.getBoundingClientRect(), w = el.offsetWidth; var left = Math.min(Math.max(12, r.right - w), window.innerWidth - w - 12); if (r.left < 300 && anchor.id !== 'avatar-btn') left = Math.max(12, r.left); el.style.left = left + 'px'; el.style.right = 'auto'; el.style.top = (r.bottom + 10 > window.innerHeight - 200 ? Math.max(12, r.top - el.offsetHeight - 10) : r.bottom + 10) + 'px'; el.style.transformOrigin = r.left < 300 ? 'bottom left' : 'top right'; }
+    return el;
+  }
+  function menuItem(ic, label, attrs, sub) { return '<button class="hit" ' + attrs + '><span class="ic">' + icon(ic, 16) + '</span><span style="flex:1;min-width:0"><b style="display:block;font-weight:600">' + label + '</b>' + (sub ? '<span class="meta">' + sub + '</span>' : '') + '</span></button>'; }
+  $('btn-new').addEventListener('click', function (e) {
+    e.stopPropagation();
+    if ($('pop') && $('pop').dataset.kind === 'new') { closePop(); return; }
+    var p = popover(menuItem('inbox', 'Enquiry', 'data-act="new-lead"', 'Phone, WhatsApp or walk-in') + menuItem('users', 'Client', 'data-act="new-client"') + menuItem('brief', 'Matter', 'data-act="new-matter"') + menuItem('task', 'Task', 'data-act="new-task"') + menuItem('cal', 'Appointment', 'data-act="new-appt"') + menuItem('gavel', 'Disciplinary hearing', 'data-act="new-hearing"') + '<hr>' + menuItem('doc', 'Invoice', 'data-act="new-invoice"') + menuItem('doc', 'Quote', 'data-act="new-quote"') + menuItem('wallet', 'Payment', 'data-act="new-payment"') + menuItem('upload', 'Upload files', 'data-act="upload"'), this, 'menu');
+    p.dataset.kind = 'new';
+  });
+  function accountMenu(anchor) {
+    if ($('pop') && $('pop').dataset.kind === 'acct') { closePop(); return; }
+    var dark = document.documentElement.dataset.theme !== 'light';
+    var p = popover('<div style="display:flex;gap:10px;align-items:center;padding:10px 12px 8px"><span class="avatar">' + esc(initials()) + '</span><span style="min-width:0"><b style="display:block">' + esc((S.me && S.me.full_name) || (S.user && S.user.email) || '') + '</b><span class="meta">' + esc(S.user ? S.user.email : '') + '</span></span></div><hr>' +
+      menuItem('sun', 'My work', 'data-go="#mywork"') + menuItem(dark ? 'sun' : 'moon', dark ? 'Light theme' : 'Dark theme', 'data-shell="theme"') + menuItem('side', document.documentElement.classList.contains('mini') ? 'Expand sidebar' : 'Collapse sidebar', 'data-shell="side"') + menuItem('key', 'Set password', 'data-shell="pw"') + menuItem('cog', 'Company settings', 'data-go="#settings"') + '<hr>' + menuItem('out', 'Sign out', 'data-shell="out"'), anchor, 'menu');
+    p.dataset.kind = 'acct';
+  }
+  $('avatar-btn').addEventListener('click', function (e) { e.stopPropagation(); accountMenu(this); });
+  $('me-card').addEventListener('click', function (e) { e.stopPropagation(); accountMenu(this); });
+  $('search-pill').addEventListener('click', function () { openPalette(); });
+  function setTheme(t) { document.documentElement.dataset.theme = t; try { localStorage.setItem('lla_theme', t); } catch (e) {} $('theme-ic').innerHTML = ICONS[t === 'light' ? 'moon' : 'sun']; }
+  $('theme-btn').addEventListener('click', function () { setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'); });
+  function toggleSide() { var on = document.documentElement.classList.toggle('mini'); try { localStorage.setItem('lla_side', on ? 'mini' : 'full'); } catch (e) {} }
+  $('collapse').addEventListener('click', toggleSide);
+  $('menu-btn').addEventListener('click', function (e) { e.stopPropagation(); document.documentElement.classList.toggle('side-open'); });
+  document.addEventListener('click', function (e) { if (document.documentElement.classList.contains('side-open') && !e.target.closest('#side,#menu-btn')) document.documentElement.classList.remove('side-open'); if (e.target.closest('#nav a')) document.documentElement.classList.remove('side-open'); });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-shell]'); if (!b) return; closePop();
+    var a = b.dataset.shell;
+    if (a === 'theme') setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+    if (a === 'side') toggleSide();
+    if (a === 'pw') $('setpw').click();
+    if (a === 'out') $('logout').click();
+  });
+  if (/Mac|iPhone|iPad/.test(navigator.platform || '') === false) $('kbd-k').textContent = 'Ctrl K';
+  setTheme(document.documentElement.dataset.theme || 'dark');
+  function initials() { var n = (S.me && S.me.full_name) || (S.user && S.user.email) || 'LL'; var p = n.replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean); return ((p[0] || 'L')[0] + ((p[1] || p[0] || 'L')[0] || '')).toUpperCase(); }
+
+  /* ----- Page chrome: breadcrumb, next-up card, enter motion, count-up ----- */
+  var SECTION = {}; NAV.forEach(function (x) { if (x.id) SECTION[x.id] = x.label; });
+  function greet() { var h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
+  function drawCrumbs() {
+    var h = location.hash.slice(1), cur = current(), parts = [];
+    parts.push('<span class="hide-sm">' + greet() + ((S.me && S.me.full_name) ? ', ' + esc(S.me.full_name.split(' ')[0]) : '') + '</span>');
+    parts.push('<a href="#' + cur + '">' + esc(SECTION[cur] || 'Dashboard') + '</a>');
+    if (h.indexOf('matter=') === 0) { var m = byId(S.matters, h.slice(7)); if (m) parts.push('<b>' + esc(m.ref) + '</b>'); }
+    else if (h.indexOf('client=') === 0) { var c = byId(S.clients, h.slice(7)); if (c) parts.push('<b>' + esc(c.name) + '</b>'); }
+    else { var tabKey = { dashboard: 'dashTab', inbox: 'inboxTab', quotes: 'qTab', website: 'wTab', settings: 'sTab', documents: 'dTab', mywork: 'mwTab' }[cur]; var tv = tabKey && S.ui[tabKey]; parts[parts.length - 1] = '<b>' + esc(SECTION[cur] || 'Dashboard') + '</b>'; if (tv) parts.push('<span>' + esc(tv) + '</span>'); }
+    $('crumbs').innerHTML = parts.join('<span class="sep">›</span>');
+  }
+  function drawNextUp() {
+    var nx = agenda().filter(function (d) { return d.date >= new Date(Date.now() - 30 * 60000) || (d.left >= 0 && !/\d:\d/.test(d.what)); }).filter(function (d) { return d.left >= 0; })[0];
+    var el = $('nextup');
+    if (!nx) { el.innerHTML = '<span class="sw-ic">' + icon('task', 18) + '</span><span class="sw-t"><small>Next up</small><b>Nothing scheduled</b></span>'; el.onclick = function () { location.hash = 'mywork'; }; return; }
+    var when = nx.left === 0 ? (/·\s*\d\d:\d\d/.test(nx.what) ? 'Today ' + (nx.what.match(/(\d\d:\d\d)/) || [''])[0] : 'Today') : nx.left === 1 ? 'Tomorrow' : 'In ' + nx.left + ' days';
+    el.innerHTML = '<span class="sw-ic">' + icon(nx.kind === 'Hearing' ? 'gavel' : /Time limit|Deadline|Compliance/.test(nx.kind) ? 'clock' : nx.kind === 'Task' ? 'task' : 'cal', 18) + '</span><span class="sw-t"><small>Next up · ' + esc(when) + '</small><b>' + esc(nx.what.replace(/ · \d\d:\d\d.*/, '')) + '</b></span>';
+    el.onclick = function () { location.hash = nx.matter ? 'matter=' + nx.matter : 'deadlines'; };
+  }
+  function countUp(root) {
+    root.querySelectorAll('.stat b, .ring .lab b').forEach(function (b) {
+      var txt = b.textContent, m = txt.match(/^(.*?)(-?[\d\s]*\d(?:[.,]\d+)?)(.*)$/);
+      if (!m) return;
+      var raw = m[2].replace(/\s/g, ''), target = parseFloat(raw.replace(',', '.')); if (!isFinite(target) || target === 0) return;
+      var dec = (raw.split(/[.,]/)[1] || '').length, pre = m[1], post = m[3], t0 = performance.now(), dur = 900;
+      var fmtN = function (v) { var s = v.toFixed(dec); var parts = s.split('.'); parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' '); return parts.join('.'); };
+      (function step(now) { var k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3); b.textContent = pre + fmtN(target * e) + post; if (k < 1) requestAnimationFrame(step); else b.textContent = txt; })(t0);
+    });
+    root.querySelectorAll('.ring .val').forEach(function (c) { var target = c.getAttribute('data-off'); requestAnimationFrame(function () { requestAnimationFrame(function () { c.style.strokeDashoffset = target; }); }); });
+  }
+  function ring(pct, big, small) { var r = 40, cc = 2 * Math.PI * r, off = cc * (1 - Math.max(0, Math.min(1, pct))); return '<div class="ring"><svg width="96" height="96" viewBox="0 0 96 96"><circle class="trk" cx="48" cy="48" r="' + r + '"/><circle class="val" cx="48" cy="48" r="' + r + '" stroke-dasharray="' + cc.toFixed(1) + '" stroke-dashoffset="' + cc.toFixed(1) + '" data-off="' + off.toFixed(1) + '"/></svg><div class="lab"><span><b>' + big + '</b><small>' + small + '</small></span></div></div>'; }
+  var lastRoute = null;
+  function afterRender() {
+    var v = $('view'), route = location.hash.split('&')[0];
+    drawCrumbs(); drawNextUp();
+    var av = initials(); $('me-av').textContent = av; $('avatar-btn').textContent = av;
+    $('me-name').textContent = (S.me && S.me.full_name) || (S.user && S.user.email.split('@')[0]) || 'Staff';
+    $('me-role').textContent = S.me && S.me.role ? roleLabelShort(S.me.role) : (S.user ? S.user.email : '');
+    if (route !== lastRoute) { lastRoute = route; v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter'); countUp(v); window.scrollTo({ top: 0 }); }
+    else v.querySelectorAll('.ring .val').forEach(function (c) { c.style.strokeDashoffset = c.getAttribute('data-off'); });
+  }
 
   /* ----- Notifications ----- */
   function unseen() { var seen = S.me && S.me.last_seen_activity ? D(S.me.last_seen_activity) : new Date(0); return S.activity.filter(function (a) { return D(a.at) > seen && (a.actor || '').toLowerCase() !== myEmail(); }); }
@@ -1989,12 +2127,13 @@
   function showBell() {
     var u = unseen(), ids = u.map(function (a) { return a.id; });
     var list = S.activity.slice(0, 40);
-    $('modal-root').innerHTML = '<div class="pop" id="pop"><div class="ph"><b>Notifications</b><span style="display:flex;gap:8px;align-items:center"><span class="meta">' + u.length + ' new</span>' + (u.length ? '<button class="btn sm" id="bell-seen">Mark all read</button>' : '') + '</span></div>' +
-      (list.map(function (a) { var mine = (a.for_email || '').toLowerCase() === myEmail(); return '<a class="hit' + (ids.indexOf(a.id) >= 0 ? ' unseen' : '') + '" href="' + ENTITY_LINK(a) + '"><span style="min-width:0;flex:1">' + (mine && a.entity === 'tasks' && a.action !== 'done' ? '<b style="color:var(--red)">For you · </b>' : '') + esc(a.summary) + '<span class="meta" style="display:block">' + esc(actorLabel(a)) + ' · ' + fmtDT(a.at) + '</span></span></a>'; }).join('') || '<div class="empty">Nothing yet. New enquiries, payments, assignments and changes appear here.</div>') + '</div>';
+    var bellHtml = '<div class="ph"><b>Notifications</b><span style="display:flex;gap:8px;align-items:center"><span class="meta">' + u.length + ' new</span>' + (u.length ? '<button class="btn sm" id="bell-seen">Mark all read</button>' : '') + '</span></div>' +
+      (list.map(function (a) { var mine = (a.for_email || '').toLowerCase() === myEmail(); return '<a class="hit' + (ids.indexOf(a.id) >= 0 ? ' unseen' : '') + '" href="' + ENTITY_LINK(a) + '"><span style="min-width:0;flex:1">' + (mine && a.entity === 'tasks' && a.action !== 'done' ? '<b style="color:var(--red)">For you · </b>' : '') + esc(a.summary) + '<span class="meta" style="display:block">' + esc(actorLabel(a)) + ' · ' + fmtDT(a.at) + '</span></span></a>'; }).join('') || '<div class="empty">Nothing yet. New enquiries, payments, assignments and changes appear here.</div>');
+    var bp = popover(bellHtml, $('bell')); bp.dataset.kind = 'bell';
     var sb2 = $('bell-seen'); if (sb2) sb2.onclick = markSeen;
   }
   async function markSeen() { var r = await sb.rpc('mark_activity_seen'); if (!r.error && r.data) { S.me.last_seen_activity = r.data; } else { S.me.last_seen_activity = new Date().toISOString(); } updateBell(); if ($('pop')) showBell(); }
-  $('bell').addEventListener('click', function (e) { e.stopPropagation(); if ($('pop') && $('pop').querySelector('.ph b').textContent === 'Notifications') { closePop(); return; } showBell(); });
+  $('bell').addEventListener('click', function (e) { e.stopPropagation(); if ($('pop') && $('pop').dataset.kind === 'bell') { closePop(); return; } showBell(); });
   document.addEventListener('click', function (e) { if (e.target.closest('#pop a.hit')) setTimeout(closePop, 0); });
   var actTimer = null;
   function startActivity() {
@@ -2033,7 +2172,7 @@
       if (S.ui.matterTab === 'File notes' && !S.notes[m.id]) loadNotes(m.id).then(render);
       $('view').innerHTML = matterDetail(m);
     } else $('view').innerHTML = V[cur]();
-    bind();
+    bind(); afterRender();
   }
   function bind() {
     var v = $('view');
@@ -2046,7 +2185,7 @@
     // Pipeline drag and drop
     v.querySelectorAll('[data-drag]').forEach(function (c) { c.addEventListener('dragstart', function (e) { e.dataTransfer.setData('text/plain', c.dataset.drag); }); });
     v.querySelectorAll('[data-drop]').forEach(function (col) {
-      col.addEventListener('dragover', function (e) { e.preventDefault(); col.style.outline = '2px dashed #d3a728'; });
+      col.addEventListener('dragover', function (e) { e.preventDefault(); col.style.outline = '2px dashed var(--accent)'; });
       col.addEventListener('dragleave', function () { col.style.outline = ''; });
       col.addEventListener('drop', async function (e) { e.preventDefault(); col.style.outline = ''; var id = e.dataTransfer.getData('text/plain'); var r = await sb.from('leads').update({ status: col.dataset.drop }).eq('id', id).select().single(); if (r.error) { toast(r.error.message); return; } upsertLocal(S.leads, r.data); toast('Moved to ' + leadLabel(col.dataset.drop)); render(); });
     });
@@ -2056,6 +2195,7 @@
     if (!el) return;
     if (el.hasAttribute('data-close') && !el.dataset.act) { $('modal-root').innerHTML = ''; return; }
     var act = el.dataset.act, id = el.dataset.id;
+    if (el.closest('#pop')) closePop();
     if (act) {
       e.preventDefault();
       if (P2[act]) return P2[act](el, id);
