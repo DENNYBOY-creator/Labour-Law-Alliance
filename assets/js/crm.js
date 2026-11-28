@@ -1865,7 +1865,7 @@ function renderNav(cur) {
   function historyList(acts, kind, id) {
     var more = '';
     if (acts.length >= 0 && S.histLoaded !== kind + id) { S.histLoaded = kind + id; sb.from('activity').select('*').eq(kind === 'matter' ? 'matter_id' : 'client_id', id).order('id', { ascending: false }).limit(200).then(function (r) { if (r.error) return; r.data.forEach(function (x) { if (!S.activity.some(function (y) { return y.id === x.id; })) S.activity.push(x); }); S.activity.sort(function (a, b) { return b.id - a.id; }); render(); }); }
-    return '<div class="tl">' + (acts.map(function (a) { return '<div class="it"><span class="mono">' + fmtDT(a.at) + '</span><div>' + esc(a.summary) + '<div class="meta">' + esc(actorLabel(a)) + '</div></div></div>'; }).join('') || empty('No history yet. Changes are recorded from now on.')) + '</div>' + more;
+    return '<div class="tl">' + (acts.map(function (a) { return '<div class="it"><span class="mono">' + fmtDT(a.at) + '</span><div>' + esc(nameify(a.summary)) + '<div class="meta">' + esc(actorLabel(a)) + '</div></div></div>'; }).join('') || empty('No history yet. Changes are recorded from now on.')) + '</div>' + more;
   }
 
   /* ----- Client page ----- */
@@ -2579,7 +2579,7 @@ function renderNav(cur) {
       '<div class="row"><div class="grow">Retention</div>' + (c.anonymised_at ? pill('Anonymised ' + fmt(c.anonymised_at), '') : open ? pill('Active client', 'p-blue') : due ? pill('Retention period over', 'p-amber') : pill('Within retention period', 'p-green')) + '</div></div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn pri" data-act="popia-export" data-client="' + c.id + '">Download all their data</button>' + (partner && !c.anonymised_at && !open ? '<button class="btn danger" data-act="popia-anon" data-client="' + c.id + '">Anonymise</button>' : '') + '</div>' +
       '<p class="meta" style="margin-top:10px">Use the download to answer a request for access (POPIA s23). Anonymising removes their name, contact details, notes and documents once the retention period ends; invoices and payments stay for tax purposes without their name.</p></div>' +
-      '<div><h3 style="margin:0 0 8px">Who opened this file</h3>' + (!partner ? '<p class="meta">Only partners can see the access log.</p>' : log === 'loading' || !log ? '<p class="meta">Loading…</p>' : (log.length ? '<div class="tbl"><table><tr><th>When</th><th>Who</th><th>What</th></tr>' + log.map(function (a) { var m = byId(S.matters, a.matter_id); return '<tr><td class="mono">' + (a.at ? fmtDT(a.at) : '—') + '</td><td>' + esc(a.actor) + '</td><td>' + (m ? esc(m.ref) : 'Client page') + '</td></tr>'; }).join('') + '</table></div>' : empty('Nobody has opened it since logging started.'))) + '</div></div>';
+      '<div><h3 style="margin:0 0 8px">Who opened this file</h3>' + (!partner ? '<p class="meta">Only partners can see the access log.</p>' : log === 'loading' || !log ? '<p class="meta">Loading…</p>' : (log.length ? '<div class="tbl"><table><tr><th>When</th><th>Who</th><th>What</th></tr>' + log.map(function (a) { var m = byId(S.matters, a.matter_id); return '<tr><td class="mono">' + (a.at ? fmtDT(a.at) : '—') + '</td><td>' + esc(staffName(a.actor)) + '</td><td>' + (m ? esc(m.ref) : 'Client page') + '</td></tr>'; }).join('') + '</table></div>' : empty('Nobody has opened it since logging started.'))) + '</div></div>';
   }
   P2['popia-anon'] = function (el) {
     var c = byId(S.clients, el.dataset.client); if (!c) return;
@@ -2657,7 +2657,7 @@ function renderNav(cur) {
   P2['ob-show'] = function (el) { var o = byId(S.onboarding, el.dataset.id); if (o) showOnboardLink(o); };
   P2['ob-letter'] = function (el) {
     var o = byId(S.onboarding, el.dataset.id); if (!o) return;
-    var acc = '<div style="max-width:760px;margin:0 auto 40px;padding:14px 24px;border:2px solid #2e7d32;font-family:Arial,sans-serif;font-size:14px">Accepted online by <b>' + esc(o.accepted_name || '') + '</b> on ' + fmtDT(o.completed_at) + ' using a private onboarding link sent by ' + esc(o.created_by || 'the firm') + '.</div>';
+    var acc = '<div style="max-width:760px;margin:0 auto 40px;padding:14px 24px;border:2px solid #2e7d32;font-family:Arial,sans-serif;font-size:14px">Accepted online by <b>' + esc(o.accepted_name || '') + '</b> on ' + fmtDT(o.completed_at) + ' using a private onboarding link sent by ' + esc(o.created_by ? staffName(o.created_by) : 'the firm') + '.</div>';
     printHtml((o.letter_html || '').replace('</body>', acc + '</body>'));
   };
   function onboardPanel(c) {
@@ -3149,7 +3149,7 @@ function renderNav(cur) {
       (inv ? '<div class="callout p-blue">Converted to invoice <a href="#invoice=' + inv.id + '">' + esc(inv.number) + '</a>.</div>' : '') + (fromQ ? '<div class="callout p-blue">Made from quote <a href="#quote=' + fromQ.id + '">' + esc(fromQ.number) + '</a>.</div>' : '') +
       '<div class="panel" style="padding:0;overflow:hidden">' + frame(docHtml(kind, d)) + '</div>' +
       (!isQ ? '<div class="panel"><div class="hd"><h2>Payments received</h2>' + (s.key !== 'paid' && s.key !== 'cancelled' ? '<button class="btn sm" data-go="#pay=' + id + '">Record payment</button>' : '') + '</div>' + (pays.length ? '<div class="tbl"><table><tr><th>Date</th><th>Payment #</th><th>Reference</th><th>Mode</th><th style="text-align:right">Amount</th></tr>' + pays.map(function (p) { return '<tr class="click" data-go="#receipt=' + p.id + '"><td class="mono">' + fmt(p.received_on) + '</td><td class="mono">' + (p.number || '') + '</td><td>' + esc(p.reference || '') + '</td><td>' + esc(p.method) + '</td><td class="mono" style="text-align:right">' + R2(p.amount) + '</td></tr>'; }).join('') + '</table></div>' : '<p class="meta" style="margin:0">No payments yet.</p>') + '</div>' : '') +
-      '<div class="panel"><div class="hd"><h2>More information</h2></div><dl class="kv"><dt>Email recipients</dt><dd>' + esc(clientEmail(d.client_id) || '—') + '</dd>' + (d.sent_at ? '<dt>Last sent</dt><dd>' + fmtDT(d.sent_at) + '</dd>' : '') + (d.attorney_email ? '<dt>Attorney</dt><dd>' + esc(d.attorney_email) + '</dd>' : '') + (d.matter_id && byId(S.matters, d.matter_id) ? '<dt>Matter</dt><dd><a href="#matter=' + d.matter_id + '">' + esc(byId(S.matters, d.matter_id).ref) + '</a></dd>' : '') + (files.length ? '<dt>Attachments</dt><dd>' + files.map(function (f) { return '<a href="#" data-act="doc-open" data-id="' + f.id + '">' + esc(f.name) + '</a>'; }).join('<br>') + '</dd>' : '') + '</dl></div>' +
+      '<div class="panel"><div class="hd"><h2>More information</h2></div><dl class="kv"><dt>Email recipients</dt><dd>' + esc(clientEmail(d.client_id) || '—') + '</dd>' + (d.sent_at ? '<dt>Last sent</dt><dd>' + fmtDT(d.sent_at) + '</dd>' : '') + (d.attorney_email ? '<dt>Attorney</dt><dd>' + esc(staffName(d.attorney_email)) + '</dd>' : '') + (d.matter_id && byId(S.matters, d.matter_id) ? '<dt>Matter</dt><dd><a href="#matter=' + d.matter_id + '">' + esc(byId(S.matters, d.matter_id).ref) + '</a></dd>' : '') + (files.length ? '<dt>Attachments</dt><dd>' + files.map(function (f) { return '<a href="#" data-act="doc-open" data-id="' + f.id + '">' + esc(f.name) + '</a>'; }).join('<br>') + '</dd>' : '') + '</dl></div>' +
       '</section></div>';
   }
   P2['doc-pdf'] = async function (el) {
@@ -3527,6 +3527,37 @@ function renderNav(cur) {
   P2['pipe-tpl-new'] = function () { editPipe(null); };
   P2['pipe-tpl-edit'] = function (el) { editPipe(pipe(el.dataset.key)); };
 
+  /* =====================================================================
+     PHASE 10: people's names instead of "Staff" or email addresses
+     ===================================================================== */
+  function nameify(text) {
+    var t = String(text == null ? '' : text);
+    (S.staff || []).forEach(function (s) { if (!s.email) return; var rx = new RegExp(s.email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'); t = t.replace(rx, staffName(s.email)); });
+    return t;
+  }
+  function needsName() {
+    var n = S.me && S.me.full_name, st = S.settings || {};
+    if (!S.me || !S.me.email) return false;
+    if (!n || n.trim().length < 2) return true;
+    var low = n.trim().toLowerCase();
+    return [st.trading_name, st.legal_name, 'labour law alliance', 'staff', 'admin', 'info'].filter(Boolean).some(function (x) { return low === String(x).trim().toLowerCase(); }) || low === S.me.email.split('@')[0].toLowerCase();
+  }
+  function askName(force) {
+    if (!force && (!needsName() || S.askedName)) return;
+    S.askedName = true;
+    openForm({
+      title: force ? 'Your name' : 'What should the CRM call you?', saveLabel: 'Save',
+      fields: [{ k: 'name', label: 'Your full name', req: true, full: true, ph: 'e.g. Nomsa Maluleke' }],
+      values: { name: needsName() ? '' : (S.me.full_name || '') },
+      extra: '<p class="meta full" style="margin:0">Shown in the greeting, on your account card, and next to your tasks, notes and changes. ' + (force ? '' : 'You are signed in as ' + esc(S.me.email) + '.') + '</p>',
+      save: async function (d) {
+        var r = await sb.rpc('set_my_name', { p_name: d.name }); if (r.error) return r.error.message;
+        S.me.full_name = r.data; var st = S.staff.find(function (x) { return x.email === S.me.email; }); if (st) st.full_name = r.data;
+        toast('Thanks, ' + r.data.split(' ')[0] + '.'); render();
+      }
+    });
+  }
+
   /* ----- Shell: popovers, theme, sidebar ----- */
   function popover(html, anchor, cls) {
     closePop();
@@ -3545,7 +3576,7 @@ function renderNav(cur) {
     if ($('pop') && $('pop').dataset.kind === 'acct') { closePop(); return; }
     var dark = document.documentElement.dataset.theme !== 'light';
     var p = popover('<div style="display:flex;gap:10px;align-items:center;padding:10px 12px 8px"><span class="avatar">' + esc(initials()) + '</span><span style="min-width:0"><b style="display:block">' + esc((S.me && S.me.full_name) || (S.user && S.user.email) || '') + '</b><span class="meta">' + esc(S.user ? S.user.email : '') + '</span></span></div><hr>' +
-      menuItem('sun', 'My work', 'data-go="#mywork"') + menuItem(dark ? 'sun' : 'moon', dark ? 'Light theme' : 'Dark theme', 'data-shell="theme"') + menuItem('side', document.documentElement.classList.contains('mini') ? 'Expand sidebar' : 'Collapse sidebar', 'data-shell="side"') + menuItem('key', 'Set password', 'data-shell="pw"') + menuItem('shield', 'Two-step sign-in', 'data-shell="mfa"') + menuItem('cog', 'Company settings', 'data-go="#settings"') + '<hr>' + menuItem('out', 'Sign out', 'data-shell="out"'), anchor, 'menu');
+      menuItem('sun', 'My work', 'data-go="#mywork"') + menuItem(dark ? 'sun' : 'moon', dark ? 'Light theme' : 'Dark theme', 'data-shell="theme"') + menuItem('side', document.documentElement.classList.contains('mini') ? 'Expand sidebar' : 'Collapse sidebar', 'data-shell="side"') + menuItem('users', 'Change my name', 'data-shell="name"') + menuItem('key', 'Set password', 'data-shell="pw"') + menuItem('shield', 'Two-step sign-in', 'data-shell="mfa"') + menuItem('cog', 'Company settings', 'data-go="#settings"') + '<hr>' + menuItem('out', 'Sign out', 'data-shell="out"'), anchor, 'menu');
     p.dataset.kind = 'acct';
   }
   $('avatar-btn').addEventListener('click', function (e) { e.stopPropagation(); accountMenu(this); });
@@ -3563,6 +3594,7 @@ function renderNav(cur) {
     if (a === 'theme') setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
     if (a === 'side') toggleSide();
     if (a === 'pw') $('setpw').click();
+    if (a === 'name') askName(true);
     if (a === 'mfa') mfaSetup();
     if (a === 'out') $('logout').click();
   });
@@ -3608,7 +3640,8 @@ function renderNav(cur) {
     var v = $('view'), route = location.hash.split('&')[0];
     drawCrumbs(); drawNextUp();
     var av = initials(); $('me-av').textContent = av; $('avatar-btn').textContent = av;
-    $('me-name').textContent = (S.me && S.me.full_name) || (S.user && S.user.email.split('@')[0]) || 'Staff';
+    $('me-name').textContent = (S.me && S.me.full_name) || (S.user && S.user.email ? S.user.email.split('@')[0] : '');
+    if (!S.askedName && needsName()) setTimeout(function () { if (!document.querySelector('.modal')) askName(false); }, 900);
     $('me-role').textContent = S.me && S.me.role ? roleLabelShort(S.me.role) : (S.user ? S.user.email : '');
     if (route !== lastRoute) { lastRoute = route; v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter'); countUp(v); window.scrollTo({ top: 0 }); }
     else v.querySelectorAll('.ring .val').forEach(function (c) { c.style.strokeDashoffset = c.getAttribute('data-off'); });
@@ -3621,7 +3654,7 @@ function renderNav(cur) {
     var u = unseen(), ids = u.map(function (a) { return a.id; });
     var list = S.activity.slice(0, 40);
     var bellHtml = '<div class="ph"><b>Notifications</b><span style="display:flex;gap:8px;align-items:center"><span class="meta">' + u.length + ' new</span>' + (u.length ? '<button class="btn sm" id="bell-seen">Mark all read</button>' : '') + '</span></div>' +
-      (list.map(function (a) { var mine = (a.for_email || '').toLowerCase() === myEmail(); return '<a class="hit' + (ids.indexOf(a.id) >= 0 ? ' unseen' : '') + '" href="' + ENTITY_LINK(a) + '"><span style="min-width:0;flex:1">' + (mine && a.entity === 'tasks' && a.action !== 'done' ? '<b style="color:var(--red)">For you · </b>' : '') + esc(a.summary) + '<span class="meta" style="display:block">' + esc(actorLabel(a)) + ' · ' + fmtDT(a.at) + '</span></span></a>'; }).join('') || '<div class="empty">Nothing yet. New enquiries, payments, assignments and changes appear here.</div>');
+      (list.map(function (a) { var mine = (a.for_email || '').toLowerCase() === myEmail(); return '<a class="hit' + (ids.indexOf(a.id) >= 0 ? ' unseen' : '') + '" href="' + ENTITY_LINK(a) + '"><span style="min-width:0;flex:1">' + (mine && a.entity === 'tasks' && a.action !== 'done' ? '<b style="color:var(--red)">For you · </b>' : '') + esc(nameify(a.summary)) + '<span class="meta" style="display:block">' + esc(actorLabel(a)) + ' · ' + fmtDT(a.at) + '</span></span></a>'; }).join('') || '<div class="empty">Nothing yet. New enquiries, payments, assignments and changes appear here.</div>');
     var bp = popover(bellHtml, $('bell')); bp.dataset.kind = 'bell';
     var sb2 = $('bell-seen'); if (sb2) sb2.onclick = markSeen;
   }
