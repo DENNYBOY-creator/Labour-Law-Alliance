@@ -45,7 +45,7 @@
   var FORUMS = ['CCMA', 'Bargaining council', 'Labour Court', 'Labour Appeal Court', 'Internal hearing', 'Consultation process', 'Advice only'];
 
   /* ---------- State ---------- */
-  var S = { user: null, leads: [], clients: [], matters: [], appts: [], deadlines: [], notes: {}, settings: {}, staff: [], quotes: [], invoices: [], items: [], payments: [], docs: [], me: {}, ui: { inboxSel: null, inboxTab: 'All', matterTab: 'Overview', weekStart: null, clientQ: '', matterQ: '' } };
+  var S = { user: null, leads: [], clients: [], matters: [], appts: [], deadlines: [], notes: {}, settings: {}, staff: [], quotes: [], invoices: [], items: [], payments: [], docs: [], time: [], hearings: [], compliance: [], me: {}, ui: { inboxSel: null, inboxTab: 'All', matterTab: 'Overview', weekStart: null, clientQ: '', matterQ: '' } };
   var byId = function (arr, id) { return arr.find(function (x) { return x.id === id; }); };
   var clientName = function (id) { var c = byId(S.clients, id); return c ? c.name : '—'; };
   var leadName = function (l) { return ((l.first_name || '') + ' ' + (l.last_name || '')).trim() || 'No name'; };
@@ -133,12 +133,15 @@
       sb.from('invoices').select('*').order('created_at', { ascending: false }),
       sb.from('line_items').select('*').order('sort'),
       sb.from('payments').select('*').order('received_on', { ascending: false }),
-      sb.from('documents').select('*').order('created_at', { ascending: false })
+      sb.from('documents').select('*').order('created_at', { ascending: false }),
+      sb.from('time_entries').select('*').order('work_date', { ascending: false }),
+      sb.from('hearings').select('*').order('starts_at', { ascending: true }),
+      sb.from('compliance_items').select('*').order('due_date', { ascending: true })
     ]);
     var bad = res.find(function (r) { return r.error; });
     if (bad) { $('view').innerHTML = '<div class="callout p-red">Could not load data: ' + esc(bad.error.message) + '</div>'; return false; }
     S.leads = res[0].data; S.clients = res[1].data; S.matters = res[2].data; S.appts = res[3].data; S.deadlines = res[4].data;
-    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data;
+    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data;
     S.me = S.staff.find(function (s) { return S.user && (s.email || '').toLowerCase() === (S.user.email || '').toLowerCase(); }) || {};
     return true;
   }
@@ -157,6 +160,8 @@
       if (m.key_rule && m.key_date) { var r = rule(m.key_rule); out.push({ date: r.calc(D(m.key_date)), what: r.label, ref: m.ref, title: m.title, kind: 'Time limit', law: r.law, matter: m.id }); }
     });
     S.deadlines.forEach(function (d) { if (d.done) return; var m = byId(S.matters, d.matter_id); out.push({ date: D(d.due_date), what: d.title, ref: m ? m.ref : '', title: m ? m.title : '', kind: 'Deadline', law: '', matter: d.matter_id, deadlineId: d.id }); });
+    (S.hearings || []).forEach(function (h) { if (h.status !== 'scheduled' || !h.starts_at) return; var m = byId(S.matters, h.matter_id); out.push({ date: D(h.starts_at), what: 'Disciplinary hearing: ' + h.employee_name + ' · ' + fmtT(h.starts_at), ref: m ? m.ref : '', title: clientName(h.client_id), kind: 'Hearing', law: '', matter: h.matter_id }); });
+    (S.compliance || []).forEach(function (c) { if (c.status !== 'open') return; out.push({ date: D(c.due_date), what: c.obligation, ref: '', title: clientName(c.client_id), kind: 'Compliance', law: c.law || '' }); });
     S.appts.forEach(function (a) { if (a.status !== 'scheduled') return; var m = byId(S.matters, a.matter_id); out.push({ date: D(a.starts_at), what: a.title + ' · ' + fmtT(a.starts_at), ref: m ? m.ref : '', title: a.location || '', kind: kindLabel(a.kind), law: '', appt: a.id }); });
     out.forEach(function (x) { x.left = daysLeft(x.date); });
     return out.sort(function (a, b) { return a.date - b.date; });
@@ -172,6 +177,7 @@
     { id: 'matters', label: 'Matters', n: function () { return S.matters.filter(function (m) { return m.stage !== 'Closed'; }).length; } },
     { id: 'deadlines', label: 'Deadlines', n: function () { return agenda().filter(function (d) { return d.left <= 7 && (d.kind === 'Time limit' || d.kind === 'Deadline' || d.kind === 'Diary'); }).length; }, hot: true },
     { id: 'appointments', label: 'Appointments' },
+    { id: 'hearings', label: 'Hearings', n: function () { return S.hearings.filter(function (h) { return h.status === 'scheduled' && h.starts_at && daysLeft(h.starts_at) >= 0 && daysLeft(h.starts_at) <= 7; }).length; } },
     { grp: 'Clients & money' },
     { id: 'clients', label: 'Clients' },
     { id: 'quotes', label: 'Quotes & invoices', n: function () { return S.invoices.filter(function (i) { return invState(i).key === 'overdue'; }).length; }, hot: true },
@@ -180,6 +186,7 @@
     { id: 'website', label: 'Website' },
     { grp: 'Firm' },
     { id: 'documents', label: 'Document centre' },
+    { id: 'compliance', label: 'Employer compliance', n: function () { return S.compliance.filter(function (c) { return c.status === 'open' && daysLeft(c.due_date) <= 14; }).length; }, hot: true },
     { id: 'settings', label: 'Company settings' }
   ];
   function renderNav(cur) {
@@ -193,7 +200,7 @@
   var V = {};
 
   /* ---------- Dashboard ---------- */
-  V.dashboard = function () {
+  function dashPractice() {
     var ag = agenda().filter(function (d) { return d.left >= -7; });
     var open = S.matters.filter(function (m) { return m.stage !== 'Closed'; });
     var wkEnd = addDays(today(), 7);
@@ -206,7 +213,7 @@
     return head(new Date().toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), 'Dashboard', 'Deadlines, appointments and new enquiries across the practice.', '<button class="btn pri" data-act="new-lead">New enquiry</button><button class="btn" data-act="new-matter">New matter</button>') +
       '<div class="grid g4">' +
       '<a class="panel stat" href="#matters" style="text-decoration:none;color:inherit"><b>' + open.length + '</b><span>Open matters</span></a>' +
-      '<a class="panel stat" href="#deadlines" style="text-decoration:none;color:inherit"><b style="color:var(--red)">' + ag.filter(function (d) { return d.left <= 7 && d.left >= 0 && /Time limit|Deadline|Diary/.test(d.kind); }).length + '</b><span>Deadlines in the next 7 days</span></a>' +
+      '<a class="panel stat" href="#deadlines" style="text-decoration:none;color:inherit"><b style="color:var(--red)">' + ag.filter(function (d) { return d.left <= 7 && d.left >= 0 && /Time limit|Deadline|Diary|Compliance|Hearing/.test(d.kind); }).length + '</b><span>Deadlines in the next 7 days</span></a>' +
       '<a class="panel stat" href="#appointments" style="text-decoration:none;color:inherit"><b>' + apptsWeek.length + '</b><span>Appointments in the next 7 days</span></a>' +
       '<a class="panel stat" href="#inbox" style="text-decoration:none;color:inherit"><b>' + newLeads.length + '</b><span>New enquiries to answer</span></a></div>' +
       '<div class="grid g21"><div class="panel"><div class="hd"><h2>Coming up</h2><a href="#deadlines">All deadlines</a></div><div class="list">' +
@@ -378,7 +385,7 @@
     });
   }
   function matterDetail(m) {
-    var tabs = ['Overview', 'Deadlines', 'File notes', 'Appointments', 'Billing', 'Documents'];
+    var tabs = ['Overview', 'Deadlines', 'File notes', 'Appointments', 'Time', 'Hearings', 'Billing', 'Documents'];
     var t = S.ui.matterTab, si = STAGES.indexOf(m.stage), r = m.key_rule && rule(m.key_rule), c = byId(S.clients, m.client_id);
     var body = '';
     if (t === 'Overview') body = '<div class="grid g2"><dl class="kv"><dt>Client</dt><dd>' + (c ? '<a href="#" data-client="' + c.id + '">' + esc(c.name) + '</a>' : '—') + '</dd><dt>We act for</dt><dd>' + esc(m.acting_for) + '</dd><dt>Other party</dt><dd>' + esc(m.other_party || '—') + '</dd><dt>Type</dt><dd>' + esc(m.dispute_type || '—') + '</dd><dt>Forum</dt><dd>' + esc(m.forum || '—') + '</dd><dt>Case number</dt><dd>' + esc(m.case_no || '—') + '</dd><dt>Attorney</dt><dd>' + esc(m.attorney || '—') + '</dd><dt>Opened</dt><dd>' + fmt(m.created_at) + '</dd></dl>' +
@@ -400,6 +407,8 @@
       var as = S.appts.filter(function (a) { return a.matter_id === m.id; });
       body = '<div style="margin-bottom:10px"><button class="btn pri" data-act="new-appt" data-matter="' + m.id + '">New appointment</button></div><div class="list">' + (as.map(function (a) { return '<div class="row" style="align-items:center">' + dateBox(a.starts_at) + '<div class="grow"><b>' + esc(a.title) + '</b><div class="meta">' + fmtT(a.starts_at) + ' · ' + kindLabel(a.kind) + (a.location ? ' · ' + esc(a.location) : '') + '</div></div>' + pill(a.status, a.status === 'scheduled' ? 'p-blue' : a.status === 'done' ? 'p-green' : '') + '<button class="btn sm" data-appt="' + a.id + '">Open</button></div>'; }).join('') || empty('No appointments linked to this matter.')) + '</div>';
     }
+    if (t === 'Time') body = matterTime(m);
+    if (t === 'Hearings') body = matterHearings(m);
     if (t === 'Billing') body = matterBilling(m);
     if (t === 'Documents') body = matterDocs(m);
     return '<div><a href="#matters">← All matters</a></div>' + head(esc(m.ref) + (m.forum ? ' · ' + esc(m.forum) : ''), esc(m.title), esc(m.dispute_type || '') + ' · acting for the ' + esc(m.acting_for), '<button class="btn pri" data-act="edit-matter" data-id="' + m.id + '">Edit matter</button>') +
@@ -410,7 +419,7 @@
   /* ---------- Deadlines ---------- */
   V.deadlines = function () {
     var ag = agenda();
-    var overdue = ag.filter(function (d) { return d.left < 0 && /Time limit|Deadline|Diary/.test(d.kind); });
+    var overdue = ag.filter(function (d) { return d.left < 0 && /Time limit|Deadline|Diary|Compliance/.test(d.kind); });
     var up = ag.filter(function (d) { return d.left >= 0; });
     var line = function (d) { return '<div class="row">' + dateBox(d.date) + '<div class="grow"><b>' + esc(d.what) + '</b><div class="meta">' + [d.ref, d.title, d.law].filter(Boolean).map(esc).join(' · ') + '</div></div><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">' + pill(d.kind, d.kind === 'Time limit' ? 'p-gold' : d.kind === 'Deadline' ? 'p-violet' : d.kind === 'Diary' ? '' : 'p-blue') + urg(d.left) + (d.matter ? '<a class="meta" href="#matter=' + d.matter + '">Open matter</a>' : '') + '</div></div>'; };
     return head('Deadlines', 'Time limits and diary', 'Statutory time limits are worked out from the key date on each matter. Hand-added deadlines, next steps and appointments are listed with them.') +
@@ -630,6 +639,10 @@
         if (r.error) return dbErr(r);
         upsertLocal(S[tbl], r.data);
         var le = await saveLines(kind, r.data.id, lines); if (le) return le;
+        if (isNew && kind === 'invoice' && preset && preset._timeIds && preset._timeIds.length) {
+          var tr = await sb.from('time_entries').update({ invoice_id: r.data.id }).in('id', preset._timeIds).select();
+          if (!tr.error) tr.data.forEach(function (x) { upsertLocal(S.time, x); });
+        }
         if (isNew && kind === 'quote' && preset && preset.lead_id) { var lr = await sb.from('leads').update({ status: 'quote_sent', est_value: totals(lines, data.vat_rate).total }).eq('id', preset.lead_id).select().single(); if (!lr.error) upsertLocal(S.leads, lr.data); }
         toast((kind === 'quote' ? 'Quote ' : 'Invoice ') + r.data.number + ' saved'); render();
       },
@@ -673,9 +686,10 @@
 
   V.quotes = function () {
     var tab = S.ui.qTab || 'Invoices';
-    var tabs = '<div class="subtabs">' + ['Invoices', 'Quotes'].map(function (x) { return '<button data-qtab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    var tabs = '<div class="subtabs">' + ['Invoices', 'Quotes', 'Unbilled time'].map(function (x) { return '<button data-qtab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
     var body;
-    if (tab === 'Quotes') {
+    if (tab === 'Unbilled time') body = unbilledTab();
+    else if (tab === 'Quotes') {
       body = '<div class="panel"><div class="tbl"><table><tr><th>No.</th><th>Client</th><th>Date</th><th>Valid until</th><th style="text-align:right">Total</th><th>Status</th></tr>' +
         (S.quotes.map(function (q) { var t = totals(itemsOf('quote', q.id), q.vat_rate); return '<tr class="click" data-act="open-doc" data-kind="quote" data-id="' + q.id + '"><td class="mono">' + esc(q.number) + '</td><td>' + esc(clientName(q.client_id)) + '</td><td class="mono">' + fmt(q.issue_date) + '</td><td class="mono">' + fmt(q.valid_until) + '</td><td class="mono" style="text-align:right">' + R2(t.total) + (q.monthly ? ' /month' : '') + '</td><td>' + quotePill(q.status) + '</td></tr>'; }).join('') || '<tr><td colspan="6">' + empty('No quotes yet.') + '</td></tr>') + '</table></div></div>';
     } else {
@@ -1302,6 +1316,270 @@
     render(); window.scrollTo(0, 0);
   });
   document.addEventListener('click', function (e) { var b = e.target.closest('a[data-stab]'); if (b) { S.ui.sTab = b.dataset.stab; } });
+
+  /* =====================================================================
+     PHASE 4: time recording, disciplinary hearings, employer compliance, dashboard views
+     ===================================================================== */
+
+  /* ----- Time recording ----- */
+  var unbilled = function (t) { return t.billable && !t.invoice_id; };
+  function timeFields(matterId) {
+    return [
+      { k: 'matter_id', label: 'Matter', type: 'select', req: true, blank: 'Choose a matter', options: S.matters.map(function (m) { return [m.id, m.ref + ' · ' + m.title]; }) },
+      { k: 'work_date', label: 'Date', type: 'date', req: true },
+      { k: 'hours', label: 'Hours', type: 'number', step: 0.1, req: true, hint: '0.1 = 6 minutes · 0.25 = 15 minutes' },
+      { k: 'rate', label: 'Rate per hour (R)', type: 'number', step: 50 },
+      { k: 'description', label: 'Work done', req: true, full: true, ph: 'e.g. Consultation with client; drafted LRA Form 7.11' },
+      { k: 'billable', label: 'Billable to the client', type: 'checkbox' }
+    ];
+  }
+  function editTime(t, preset) {
+    var isNew = !t || !t.id;
+    openForm({
+      title: isNew ? 'Log time' : 'Time entry', fields: timeFields(), values: t || Object.assign({ work_date: ymd(today()), rate: (S.settings && S.settings.hourly_rate) || '', billable: true, hours: 1 }, preset || {}),
+      save: async function (d) {
+        if (!isNew && t.invoice_id) return 'This time is already on an invoice. Change the invoice instead.';
+        if (isNew) d.staff_email = S.user && S.user.email;
+        d.rate = d.rate || 0;
+        var r = isNew ? await sb.from('time_entries').insert(d).select().single() : await sb.from('time_entries').update(d).eq('id', t.id).select().single();
+        if (r.error) return dbErr(r);
+        upsertLocal(S.time, r.data); toast(isNew ? 'Time logged: ' + r.data.hours + ' h' : 'Saved'); render();
+      },
+      del: isNew ? null : async function () { if (t.invoice_id) return 'This time is on an invoice and cannot be deleted.'; var r = await sb.from('time_entries').delete().eq('id', t.id); if (r.error) return dbErr(r); S.time = S.time.filter(function (x) { return x.id !== t.id; }); toast('Deleted'); render(); }
+    });
+  }
+  P2['log-time'] = function (el) { editTime(null, el.dataset.matter ? { matter_id: el.dataset.matter } : null); };
+  P2['open-time'] = function (el) { editTime(byId(S.time, el.dataset.id)); };
+  P2['invoice-time'] = function (el) {
+    var m = byId(S.matters, el.dataset.matter), ts = S.time.filter(function (t) { return t.matter_id === m.id && unbilled(t); });
+    if (!ts.length) { toast('No unbilled time on this matter.'); return; }
+    var st = S.settings || {};
+    editDoc('invoice', null, { client_id: m.client_id, matter_id: m.id, vat_rate: st.vat_registered ? st.vat_rate : 0, _timeIds: ts.map(function (t) { return t.id; }),
+      _items: ts.slice().sort(function (a, b) { return a.work_date < b.work_date ? -1 : 1; }).map(function (t) { return { description: fmt(t.work_date) + ': ' + t.description, qty: t.hours, unit_price: t.rate }; }) });
+  };
+  function timeTable(ts, showMatter) {
+    return '<div class="tbl"><table><tr><th>Date</th>' + (showMatter ? '<th>Matter</th>' : '') + '<th>Work</th><th>By</th><th style="text-align:right">Hours</th><th style="text-align:right">Value</th><th>Status</th></tr>' +
+      (ts.map(function (t) { var m = byId(S.matters, t.matter_id), inv = byId(S.invoices, t.invoice_id); return '<tr class="click" data-act="open-time" data-id="' + t.id + '"><td class="mono">' + fmt(t.work_date) + '</td>' + (showMatter ? '<td class="mono">' + (m ? esc(m.ref) : '') + '</td>' : '') + '<td>' + esc(t.description) + '</td><td class="meta">' + esc((t.staff_email || '').split('@')[0]) + '</td><td class="mono" style="text-align:right">' + Number(t.hours) + '</td><td class="mono" style="text-align:right">' + (t.billable ? R2(t.hours * t.rate) : '—') + '</td><td>' + (!t.billable ? pill('Not billable') : inv ? pill('On ' + inv.number, 'p-green') : pill('Unbilled', 'p-amber')) + '</td></tr>'; }).join('') || '<tr><td colspan="7">' + empty('No time recorded.') + '</td></tr>') + '</table></div>';
+  }
+  function matterTime(m) {
+    var ts = S.time.filter(function (t) { return t.matter_id === m.id; }), ub = ts.filter(unbilled);
+    var hrs = ts.reduce(function (s, t) { return s + Number(t.hours); }, 0), val = ub.reduce(function (s, t) { return s + t.hours * t.rate; }, 0);
+    return '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><button class="btn pri" data-act="log-time" data-matter="' + m.id + '">Log time</button>' + (ub.length ? '<button class="btn" data-act="invoice-time" data-matter="' + m.id + '">Invoice unbilled time (' + R2(val) + ')</button>' : '') + '<span class="meta">' + hrs.toFixed(1) + ' hours recorded in total</span></div>' + timeTable(ts, false);
+  }
+  function unbilledTab() {
+    var ub = S.time.filter(unbilled), byM = {};
+    ub.forEach(function (t) { (byM[t.matter_id] = byM[t.matter_id] || []).push(t); });
+    var tot = ub.reduce(function (s, t) { return s + t.hours * t.rate; }, 0);
+    return '<div class="grid g4"><div class="panel stat"><b>' + R2(tot) + '</b><span>Unbilled time</span></div><div class="panel stat"><b>' + ub.reduce(function (s, t) { return s + Number(t.hours); }, 0).toFixed(1) + '</b><span>Unbilled hours</span></div><div class="panel stat"><b>' + Object.keys(byM).length + '</b><span>Matters with unbilled time</span></div><div class="panel stat"><b>' + S.time.filter(function (t) { return D(t.work_date) >= addDays(today(), -6); }).reduce(function (s, t) { return s + Number(t.hours); }, 0).toFixed(1) + '</b><span>Hours logged in the last 7 days</span></div></div>' +
+      '<div class="panel"><div class="hd"><h2>Unbilled time by matter</h2><button class="btn pri" data-act="log-time">Log time</button></div><div class="list">' +
+      (Object.keys(byM).map(function (mid) { var m = byId(S.matters, mid) || {}, ts = byM[mid]; return '<div class="row" style="align-items:center"><div class="grow"><a href="#matter=' + mid + '"><b>' + esc(m.ref || '') + ' · ' + esc(m.title || '') + '</b></a><div class="meta">' + esc(clientName(m.client_id)) + ' · ' + ts.length + ' entries · ' + ts.reduce(function (s, t) { return s + Number(t.hours); }, 0).toFixed(1) + ' h</div></div><span class="mono">' + R2(ts.reduce(function (s, t) { return s + t.hours * t.rate; }, 0)) + '</span><button class="btn sm pri" data-act="invoice-time" data-matter="' + mid + '">Create invoice</button></div>'; }).join('') || empty('No unbilled time. Log time on a matter as you work.')) + '</div></div>' +
+      '<div class="panel"><div class="hd"><h2>Recent time</h2></div>' + timeTable(S.time.slice(0, 40), true) + '</div>';
+  }
+
+  /* ----- Disciplinary hearings ----- */
+  var CHECKS = [
+    ['charges_written', 'Charges are in writing, specific and clear'],
+    ['notice_time', 'Notice served with reasonable time to prepare (at least 48 hours)'],
+    ['rights_explained', 'Right to a representative (fellow employee or shop steward) explained'],
+    ['interpreter', 'Interpreter arranged, or confirmed not needed'],
+    ['evidence_shared', 'Evidence and witness statements shared with the employee'],
+    ['chair_independent', 'Chairperson is impartial and was not involved in the facts'],
+    ['employee_heard', 'Employee could state their case, question witnesses and call their own'],
+    ['mitigation', 'Mitigating and aggravating factors heard before sanction'],
+    ['consistency', 'Sanction is consistent with how similar cases were treated'],
+    ['finding_written', 'Finding and sanction given in writing, with the right to refer to the CCMA']
+  ];
+  var HROLE = [['chairperson', 'We chair'], ['initiator', 'We initiate (for the employer)'], ['employee_representative', 'We represent the employee']];
+  var HTYPE = [['misconduct', 'Misconduct'], ['incapacity_performance', 'Incapacity: poor performance'], ['incapacity_ill_health', 'Incapacity: ill health'], ['appeal', 'Appeal hearing'], ['grievance', 'Grievance hearing']];
+  var HSTATUS = [['scheduled', 'Scheduled'], ['postponed', 'Postponed'], ['held', 'Held, finding pending'], ['finding_issued', 'Finding issued'], ['cancelled', 'Cancelled']];
+  var lbl = function (list, v) { var x = list.find(function (p) { return p[0] === v; }); return x ? x[1] : (v || '—'); };
+  function hearingFields() {
+    return [
+      { k: 'client_id', label: 'Employer (client)', type: 'select', blank: 'Choose', options: S.clients.map(function (c) { return [c.id, c.name]; }) },
+      { k: 'matter_id', label: 'Matter', type: 'select', blank: 'Not linked', options: S.matters.map(function (m) { return [m.id, m.ref + ' · ' + m.title]; }) },
+      { k: 'employee_name', label: 'Employee', req: true },
+      { k: 'our_role', label: 'Our role', type: 'select', options: HROLE },
+      { k: 'hearing_type', label: 'Type of hearing', type: 'select', options: HTYPE },
+      { k: 'starts_at', label: 'Date and time', type: 'datetime-local' },
+      { k: 'venue', label: 'Venue', ph: 'e.g. Boardroom, client site in Midrand' },
+      { k: 'notice_served', label: 'Notice served on', type: 'date', hint: 'Leave enough time for the employee to prepare.' },
+      { k: 'representative', label: 'Employee’s representative', ph: 'e.g. Shop steward (NUMSA)' },
+      { k: 'interpreter', label: 'Interpreter', ph: 'e.g. isiZulu, or Not needed' },
+      { k: 'charges', label: 'Charges (one per line)', type: 'textarea', full: true },
+      { k: 'status', label: 'Status', type: 'select', options: HSTATUS },
+      { k: 'finding', label: 'Finding', type: 'select', blank: 'Not yet', options: [['guilty', 'Guilty'], ['partly_guilty', 'Guilty on some charges'], ['not_guilty', 'Not guilty']] },
+      { k: 'sanction', label: 'Sanction', ph: 'e.g. Final written warning valid 12 months' },
+      { k: 'outcome_notes', label: 'Outcome notes', type: 'textarea', full: true }
+    ];
+  }
+  function noticeHint() {
+    var s = $('m-starts_at'), n = $('m-notice_served'), h = $('m-notice_served-hint'); if (!s || !n || !h) return;
+    if (!s.value || !n.value) { h.textContent = 'Leave enough time for the employee to prepare.'; return; }
+    var hrs = (new Date(s.value) - D(n.value)) / 36e5;
+    h.innerHTML = hrs < 48 ? '<b style="color:var(--red)">Only ' + Math.max(0, Math.round(hrs)) + ' hours’ notice: allow at least 48 hours.</b>' : '<span style="color:var(--green)">' + Math.round(hrs / 24) + ' days’ notice.</span>';
+  }
+  function editHearing(h, preset) {
+    var isNew = !h || !h.id;
+    var vals = h ? Object.assign({}, h, { starts_at: h.starts_at ? localInput(h.starts_at) : '' }) : Object.assign({ our_role: 'chairperson', hearing_type: 'misconduct', status: 'scheduled' }, preset || {});
+    var ck = (h && h.checklist) || {};
+    var extra = '<div class="fld full"><span class="lbl">Fair procedure checklist (Code of Good Practice: Dismissal, LRA Schedule 8)</span>' + CHECKS.map(function (c) { return '<label class="check" style="font-weight:400"><input type="checkbox" class="hck" data-k="' + c[0] + '"' + (ck[c[0]] ? ' checked' : '') + '> ' + esc(c[1]) + '</label>'; }).join('') + '</div>' +
+      (isNew ? '' : '<div class="fld full" style="flex-direction:row;gap:8px;flex-wrap:wrap"><button type="button" class="btn sm" data-act="hearing-notice" data-id="' + h.id + '">Notice to attend (print / PDF)</button><button type="button" class="btn sm" data-act="hearing-finding" data-id="' + h.id + '">Finding and sanction (print / PDF)</button><span class="meta">Save first if you changed anything.</span></div>');
+    openForm({
+      title: isNew ? 'New disciplinary hearing' : 'Hearing: ' + h.employee_name, fields: hearingFields(), values: vals, extra: extra, onInput: noticeHint,
+      save: async function (d) {
+        d.checklist = {}; document.querySelectorAll('.hck').forEach(function (c) { d.checklist[c.dataset.k] = c.checked; });
+        var r = isNew ? await sb.from('hearings').insert(d).select().single() : await sb.from('hearings').update(d).eq('id', h.id).select().single();
+        if (r.error) return dbErr(r);
+        upsertLocal(S.hearings, r.data); S.hearings.sort(function (a, b) { return (a.starts_at || '') < (b.starts_at || '') ? -1 : 1; });
+        toast(isNew ? 'Hearing added' : 'Hearing saved'); render();
+      },
+      del: isNew ? null : async function () { var r = await sb.from('hearings').delete().eq('id', h.id); if (r.error) return dbErr(r); S.hearings = S.hearings.filter(function (x) { return x.id !== h.id; }); toast('Hearing deleted'); render(); }
+    });
+  }
+  P2['new-hearing'] = function (el) { var m = el.dataset.matter && byId(S.matters, el.dataset.matter); editHearing(null, m ? { matter_id: m.id, client_id: m.client_id } : null); };
+  P2['open-hearing'] = function (el) { editHearing(byId(S.hearings, el.dataset.id)); };
+  function letterHtml(title, paras, signLabel) {
+    var st = S.settings || {};
+    return '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(title) + '</title><style>body{font-family:Georgia,serif;color:#1d1d1d;max-width:760px;margin:40px auto;padding:0 24px;line-height:1.6}h1{font-family:Arial,sans-serif;letter-spacing:2px;font-size:17px;color:#a07a12}.hd{display:flex;justify-content:space-between;gap:16px;border-bottom:2px solid #16203b;padding-bottom:12px;margin-bottom:20px;font-family:Arial,sans-serif;font-size:12px;color:#444}ol li{margin-bottom:6px}.sig{margin-top:50px;border-top:1px solid #444;padding-top:6px;width:280px;font-size:13px}</style></head><body>' +
+      '<div class="hd"><div><img src="https://labourlawalliance.co.za/assets/images/logo.png?v=2" width="150" alt=""></div><div style="text-align:right">' + [st.legal_name || st.trading_name, st.address1, st.address2, st.phone, st.email].filter(Boolean).map(esc).join('<br>') + '</div></div>' +
+      '<h1>' + esc(title.toUpperCase()) + '</h1>' + paras.join('') + '<div class="sig">' + esc(signLabel) + '<br>Date:</div></body></html>';
+  }
+  P2['hearing-notice'] = function (el) {
+    var h = byId(S.hearings, el.dataset.id), c = byId(S.clients, h.client_id) || {};
+    var charges = (h.charges || '').split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    printHtml(letterHtml('Notice to attend a disciplinary hearing', [
+      '<p><b>To:</b> ' + esc(h.employee_name) + '<br><b>Employer:</b> ' + esc(c.name || '') + '<br><b>Date of notice:</b> ' + fmt(h.notice_served || today()) + '</p>',
+      '<p>You are required to attend a disciplinary hearing on <b>' + (h.starts_at ? fmtDT(h.starts_at) : '[date and time]') + '</b> at <b>' + esc(h.venue || '[venue]') + '</b>.</p>',
+      '<p><b>The charges against you are:</b></p><ol>' + (charges.length ? charges.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') : '<li>[charge]</li>') + '</ol>',
+      '<p><b>Your rights at the hearing:</b></p><ol><li>You may be represented by a fellow employee or a shop steward of a recognised trade union.</li><li>You may have an interpreter if you need one. Tell us in advance so one can be arranged.</li><li>You may state your case, question the employer’s witnesses, call your own witnesses and present documents.</li><li>You may raise anything you want considered before a sanction is decided.</li></ol>',
+      '<p>If you do not attend without a good reason, the hearing may go ahead in your absence. If you cannot attend, contact us before the hearing.</p>'
+    ], 'Signed for ' + (c.name || 'the employer')));
+  };
+  P2['hearing-finding'] = function (el) {
+    var h = byId(S.hearings, el.dataset.id), c = byId(S.clients, h.client_id) || {};
+    printHtml(letterHtml('Outcome of disciplinary hearing', [
+      '<p><b>Employee:</b> ' + esc(h.employee_name) + '<br><b>Employer:</b> ' + esc(c.name || '') + '<br><b>Hearing held:</b> ' + (h.starts_at ? fmt(h.starts_at) : '[date]') + '</p>',
+      '<p><b>Charges:</b></p><ol>' + (h.charges || '[charges]').split('\n').filter(Boolean).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ol>',
+      '<p><b>Finding:</b> ' + esc({ guilty: 'Guilty', partly_guilty: 'Guilty on some charges', not_guilty: 'Not guilty' }[h.finding] || '[finding]') + '</p>',
+      '<p><b>Sanction:</b> ' + esc(h.sanction || '[sanction]') + '</p>',
+      (h.outcome_notes ? '<p><b>Reasons:</b><br>' + esc(h.outcome_notes).replace(/\n/g, '<br>') + '</p>' : '<p><b>Reasons:</b> [summary of evidence and reasons]</p>'),
+      '<p>If you disagree with this outcome, you may refer a dispute to the CCMA or the relevant bargaining council within 30 days of the date of dismissal, or within 90 days for an unfair labour practice.</p>'
+    ], h.our_role === 'chairperson' ? 'Chairperson' : 'Signed for ' + (c.name || 'the employer')));
+  };
+  function hearingRows(hs) {
+    return '<div class="tbl"><table><tr><th>When</th><th>Employee</th><th>Employer</th><th>Type</th><th>Our role</th><th>Checklist</th><th>Status</th></tr>' +
+      (hs.map(function (h) { var done = CHECKS.filter(function (c) { return h.checklist && h.checklist[c[0]]; }).length; var shortNotice = h.starts_at && h.notice_served && (D(h.starts_at) - D(h.notice_served)) / 36e5 < 48; return '<tr class="click" data-act="open-hearing" data-id="' + h.id + '"><td class="mono">' + (h.starts_at ? fmtDT(h.starts_at) : 'Not set') + '</td><td><b>' + esc(h.employee_name) + '</b>' + (shortNotice ? '<div>' + pill('Short notice', 'p-red') + '</div>' : '') + '</td><td>' + esc(clientName(h.client_id)) + '</td><td>' + lbl(HTYPE, h.hearing_type) + '</td><td>' + lbl(HROLE, h.our_role) + '</td><td>' + pill(done + '/' + CHECKS.length, done === CHECKS.length ? 'p-green' : done >= 6 ? 'p-amber' : 'p-red') + '</td><td>' + pill(lbl(HSTATUS, h.status), h.status === 'finding_issued' ? 'p-green' : h.status === 'cancelled' ? '' : h.status === 'held' ? 'p-amber' : 'p-blue') + '</td></tr>'; }).join('') || '<tr><td colspan="7">' + empty('No hearings yet.') + '</td></tr>') + '</table></div>';
+  }
+  V.hearings = function () {
+    var up = S.hearings.filter(function (h) { return ['scheduled', 'postponed', 'held'].indexOf(h.status) >= 0; }), past = S.hearings.filter(function (h) { return up.indexOf(h) < 0; }).reverse();
+    return head('Hearings', 'Disciplinary hearings', 'Hearings you chair, initiate or attend for an employee. The checklist follows the Code of Good Practice: Dismissal, so a later CCMA challenge on procedure has an answer.', '<button class="btn pri" data-act="new-hearing">New hearing</button>') +
+      '<div class="panel"><div class="hd"><h2>Upcoming and open</h2></div>' + hearingRows(up) + '</div><div class="panel"><div class="hd"><h2>Completed and cancelled</h2></div>' + hearingRows(past) + '</div>';
+  };
+  function matterHearings(m) { return '<div style="margin-bottom:12px"><button class="btn pri" data-act="new-hearing" data-matter="' + m.id + '">New hearing</button></div>' + hearingRows(S.hearings.filter(function (h) { return h.matter_id === m.id; })); }
+
+  /* ----- Employer compliance ----- */
+  var STD_OBLIGATIONS = [
+    ['ee', 'Employment Equity report (EEA2 and EEA4), submitted online', 'EEA s21', 'yearly', 1, 15, 'Designated employers only.'],
+    ['wsp', 'Workplace Skills Plan and Annual Training Report', 'Skills Development Act', 'yearly', 4, 30, 'Needed to claim the mandatory grant from the SETA.'],
+    ['coida', 'COIDA return of earnings', 'COIDA s82', 'yearly', 5, 31, 'Submitted on the Compensation Fund portal.'],
+    ['emp501', 'EMP501 annual employer reconciliation (PAYE, UIF, SDL)', 'Tax Administration Act', 'yearly', 5, 31, 'Also an interim reconciliation by 31 October.'],
+    ['emp201', 'EMP201 monthly PAYE, UIF and SDL payment', 'Income Tax Act, 4th Schedule', 'monthly', null, 7, 'Due by the 7th of each month.'],
+    ['nmw', 'Apply the new national minimum wage to payroll', 'National Minimum Wage Act', 'yearly', 3, 1, 'New rate usually takes effect on 1 March.'],
+    ['policies', 'Annual review of disciplinary code, grievance procedure and policies', 'LRA Schedule 8', 'yearly', 2, 28, 'Include the harassment policy (2022 Code of Good Practice).']
+  ];
+  function nextDue(rec, month, day, from) {
+    from = from || today();
+    if (rec === 'monthly') { var d = new Date(from.getFullYear(), from.getMonth(), day); if (d < from) d = new Date(from.getFullYear(), from.getMonth() + 1, day); return d; }
+    var y = new Date(from.getFullYear(), month - 1, day); if (y < from) y = new Date(from.getFullYear() + 1, month - 1, day); return y;
+  }
+  P2['seed-compliance'] = function (el) {
+    var employers = S.clients.filter(function (c) { return c.kind === 'employer'; });
+    if (!employers.length) { toast('Add an employer client first.'); return; }
+    openForm({
+      title: 'Add standard obligations', saveLabel: 'Add to calendar',
+      fields: [{ k: 'client_id', label: 'Employer', type: 'select', req: true, full: true, options: employers.map(function (c) { return [c.id, c.name]; }) }],
+      values: { client_id: el.dataset.client || employers[0].id },
+      extra: '<div class="fld full"><span class="lbl">Obligations</span>' + STD_OBLIGATIONS.map(function (o) { var d = nextDue(o[3], o[4], o[5]); return '<label class="check" style="font-weight:400;align-items:flex-start"><input type="checkbox" class="std" data-k="' + o[0] + '" checked> <span>' + esc(o[1]) + '<span class="meta" style="display:block">Next due ' + fmt(d) + ' · ' + (o[3] === 'monthly' ? 'monthly' : 'yearly') + ' · ' + esc(o[2]) + '. ' + esc(o[6]) + '</span></span></label>'; }).join('') + '</div>',
+      save: async function (d) {
+        var picked = Array.prototype.filter.call(document.querySelectorAll('.std'), function (c) { return c.checked; }).map(function (c) { return c.dataset.k; });
+        var existing = S.compliance.filter(function (c) { return c.client_id === d.client_id && c.status === 'open'; }).map(function (c) { return c.obligation; });
+        var rows = STD_OBLIGATIONS.filter(function (o) { return picked.indexOf(o[0]) >= 0 && existing.indexOf(o[1]) < 0; }).map(function (o) { return { client_id: d.client_id, obligation: o[1], law: o[2], recurrence: o[3], due_date: ymd(nextDue(o[3], o[4], o[5])), notes: o[6] }; });
+        if (!rows.length) return 'Those obligations are already on the calendar for this client.';
+        var r = await sb.from('compliance_items').insert(rows).select(); if (r.error) return dbErr(r);
+        S.compliance = S.compliance.concat(r.data).sort(function (a, b) { return a.due_date < b.due_date ? -1 : 1; });
+        toast(rows.length + ' obligations added'); render();
+      }
+    });
+  };
+  function editCompliance(c) {
+    var isNew = !c || !c.id;
+    openForm({
+      title: isNew ? 'Add obligation' : c.obligation,
+      fields: [{ k: 'client_id', label: 'Employer', type: 'select', req: true, options: S.clients.map(function (x) { return [x.id, x.name]; }) }, { k: 'obligation', label: 'Obligation', req: true, full: true }, { k: 'law', label: 'Law' }, { k: 'due_date', label: 'Due date', type: 'date', req: true }, { k: 'recurrence', label: 'Repeats', type: 'select', options: [['once', 'Once'], ['monthly', 'Monthly'], ['yearly', 'Yearly']] }, { k: 'notes', label: 'Notes', type: 'textarea', full: true }],
+      values: c || { recurrence: 'yearly' },
+      save: async function (d) { var r = isNew ? await sb.from('compliance_items').insert(d).select().single() : await sb.from('compliance_items').update(d).eq('id', c.id).select().single(); if (r.error) return dbErr(r); upsertLocal(S.compliance, r.data); S.compliance.sort(function (a, b) { return a.due_date < b.due_date ? -1 : 1; }); toast('Saved'); render(); },
+      del: isNew ? null : async function () { var r = await sb.from('compliance_items').delete().eq('id', c.id); if (r.error) return dbErr(r); S.compliance = S.compliance.filter(function (x) { return x.id !== c.id; }); toast('Deleted'); render(); }
+    });
+  }
+  P2['new-compliance'] = function () { if (!S.clients.length) { toast('Add a client first.'); return; } editCompliance(null); };
+  P2['open-compliance'] = function (el) { editCompliance(byId(S.compliance, el.dataset.id)); };
+  P2['done-compliance'] = async function (el) {
+    var c = byId(S.compliance, el.dataset.id);
+    var r = await sb.from('compliance_items').update({ status: 'done', completed_on: ymd(today()) }).eq('id', c.id).select().single(); if (r.error) { toast(r.error.message); return; }
+    upsertLocal(S.compliance, r.data);
+    if (c.recurrence !== 'once') {
+      var nd = c.recurrence === 'monthly' ? addMonths(D(c.due_date), 1) : addMonths(D(c.due_date), 12);
+      var n = await sb.from('compliance_items').insert({ client_id: c.client_id, obligation: c.obligation, law: c.law, recurrence: c.recurrence, due_date: ymd(nd), notes: c.notes }).select().single();
+      if (!n.error) S.compliance.push(n.data);
+      toast('Done. Next one due ' + fmt(nd));
+    } else toast('Marked done');
+    S.compliance.sort(function (a, b) { return a.due_date < b.due_date ? -1 : 1; }); render();
+  };
+  V.compliance = function () {
+    var open = S.compliance.filter(function (c) { return c.status === 'open'; }), done = S.compliance.filter(function (c) { return c.status === 'done'; }).slice(-15).reverse();
+    var employers = S.clients.filter(function (c) { return c.kind === 'employer'; });
+    return head('Employer compliance', 'Statutory calendar for employer clients', 'Recurring obligations for your employer clients. Mark one done and the next one is scheduled automatically. Everything here also appears under Deadlines.', '<button class="btn pri" data-act="seed-compliance">Add standard obligations</button><button class="btn" data-act="new-compliance">Add one</button>') +
+      '<div class="grid g4"><div class="panel stat"><b style="color:var(--red)">' + open.filter(function (c) { return daysLeft(c.due_date) < 0; }).length + '</b><span>Overdue</span></div><div class="panel stat"><b>' + open.filter(function (c) { var n = daysLeft(c.due_date); return n >= 0 && n <= 30; }).length + '</b><span>Due in the next 30 days</span></div><div class="panel stat"><b>' + open.length + '</b><span>Open obligations</span></div><div class="panel stat"><b>' + employers.length + '</b><span>Employer clients</span></div></div>' +
+      '<div class="panel"><div class="hd"><h2>Coming up</h2></div><div class="tbl"><table><tr><th>Due</th><th>Obligation</th><th>Employer</th><th>Law</th><th>Repeats</th><th></th></tr>' +
+      (open.map(function (c) { return '<tr><td class="mono">' + fmt(c.due_date) + '<div>' + urg(daysLeft(c.due_date)) + '</div></td><td><a href="#" data-act="open-compliance" data-id="' + c.id + '"><b>' + esc(c.obligation) + '</b></a>' + (c.notes ? '<div class="meta">' + esc(c.notes) + '</div>' : '') + '</td><td>' + esc(clientName(c.client_id)) + '</td><td>' + esc(c.law || '') + '</td><td>' + esc(c.recurrence) + '</td><td><button class="btn sm" data-act="done-compliance" data-id="' + c.id + '">Mark done</button></td></tr>'; }).join('') || '<tr><td colspan="6">' + empty(employers.length ? 'Nothing scheduled. Use “Add standard obligations” for each employer client.' : 'Add an employer client first, then add their obligations here.') + '</td></tr>') + '</table></div></div>' +
+      (done.length ? '<div class="panel"><div class="hd"><h2>Recently completed</h2></div><div class="list">' + done.map(function (c) { return '<div class="row"><div class="grow">' + esc(c.obligation) + '<div class="meta">' + esc(clientName(c.client_id)) + ' · due ' + fmt(c.due_date) + '</div></div>' + pill('Done ' + fmt(c.completed_on), 'p-green') + '</div>'; }).join('') + '</div></div>' : '') +
+      '<p class="meta">Dates are the usual statutory deadlines. Check each year for changes announced by the Department of Employment and Labour, SARS or the Compensation Fund.</p>';
+  };
+
+  /* ----- Dashboard views ----- */
+  V.dashboard = function () {
+    var tab = S.ui.dashTab || 'Practice';
+    var tabs = '<div class="subtabs">' + ['Practice', 'Sales', 'Website', 'Finance'].map(function (x) { return '<button data-dashtab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    if (tab === 'Practice') return dashPractice().replace('<div class="grid g4">', tabs + '<div class="grid g4">');
+    var title = head(new Date().toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), 'Dashboard', '', '<button class="btn pri" data-act="new-lead">New enquiry</button><button class="btn" data-act="log-time">Log time</button>') + tabs;
+    var monthStart = new Date(today().getFullYear(), today().getMonth(), 1), lastStart = new Date(today().getFullYear(), today().getMonth() - 1, 1);
+    if (tab === 'Sales') {
+      var thisM = S.leads.filter(function (l) { return D(l.created_at) >= monthStart; }).length, lastM = S.leads.filter(function (l) { return D(l.created_at) >= lastStart && D(l.created_at) < monthStart; }).length;
+      var live = S.leads.filter(function (l) { return ['new', 'contacted', 'consultation_booked', 'quote_sent'].indexOf(l.status) >= 0; });
+      var decided = S.leads.filter(function (l) { return l.status === 'client' || l.status === 'lost'; });
+      return title + '<div class="grid g4"><div class="panel stat"><b>' + thisM + '</b><span>Enquiries this month (last month ' + lastM + ')</span></div><div class="panel stat"><b>' + R2(live.reduce(function (s, l) { return s + Number(l.est_value || 0); }, 0)) + '</b><span>Open pipeline value</span></div><div class="panel stat"><b>' + (decided.length ? Math.round(decided.filter(function (l) { return l.status === 'client'; }).length / decided.length * 100) : 0) + '%</b><span>Win rate (engaged ÷ decided)</span></div><div class="panel stat"><b>' + S.quotes.filter(function (q) { return q.status === 'sent'; }).length + '</b><span>Quotes waiting for an answer</span></div></div>' +
+        '<div class="grid g2"><div class="panel"><div class="hd"><h2>Pipeline by stage</h2><a href="#pipeline">Pipeline</a></div>' + bars(LEAD_STAGES.filter(function (s) { return s[0] !== 'closed'; }).map(function (s) { return [s[1], S.leads.filter(function (l) { return l.status === s[0]; }).length]; })) + '</div><div class="panel"><div class="hd"><h2>Where enquiries come from</h2><a href="#website">Website</a></div>' + bars(countBy(S.leads, function (l) { return l.source; }).slice(0, 8)) + '</div></div>';
+    }
+    if (tab === 'Website') {
+      var v = S.web.views; if (!v) { loadViews(); return title + '<p class="meta">Loading visitor data…</p>'; }
+      if (v.error) return title + '<div class="callout p-red">' + esc(v.error) + '</div>';
+      var days = []; for (var i = 13; i >= 0; i--) days.push(ymd(addDays(today(), -i)));
+      var per = days.map(function (d) { var s = {}; v.forEach(function (p) { if (ymd(p.created_at) === d) s[p.session || p.created_at] = 1; }); return Object.keys(s).length; });
+      var sess = {}; v.forEach(function (p) { sess[p.session || p.created_at] = 1; });
+      return title + '<div class="grid g4"><div class="panel stat"><b>' + Object.keys(sess).length + '</b><span>Visits, last ' + S.web.days + ' days</span></div><div class="panel stat"><b>' + v.length + '</b><span>Pages viewed</span></div><div class="panel stat"><b>' + S.leads.filter(function (l) { return l.page && D(l.created_at) >= addDays(today(), -(S.web.days - 1)); }).length + '</b><span>Website enquiries, same period</span></div><div class="panel stat"><b>' + (S.web.gsc && S.web.gsc.connected ? S.web.gsc.byDate.reduce(function (s, r) { return s + r.clicks; }, 0) : '—') + '</b><span>Google clicks, 28 days</span></div></div>' +
+        '<div class="panel"><div class="hd"><h2>Visits, last 14 days</h2><a href="#website">Website</a></div>' + lineChart(days.map(function (d) { return fmt(d).replace(/ \d{4}$/, ''); }), [{ data: per, color: '#d3a728', fill: true }]) + '</div>';
+    }
+    var feesM = S.payments.filter(function (p) { return p.account === 'business' && D(p.received_on) >= monthStart; }).reduce(function (s, p) { return s + Number(p.amount); }, 0);
+    var feesL = S.payments.filter(function (p) { return p.account === 'business' && D(p.received_on) >= lastStart && D(p.received_on) < monthStart; }).reduce(function (s, p) { return s + Number(p.amount); }, 0);
+    var owed = S.invoices.reduce(function (s, i) { var st = invState(i); return s + (['sent', 'part', 'overdue'].indexOf(st.key) >= 0 ? st.bal : 0); }, 0);
+    var od = S.invoices.reduce(function (s, i) { var st = invState(i); return s + (st.key === 'overdue' ? st.bal : 0); }, 0);
+    var months = []; for (var k = 5; k >= 0; k--) months.push(new Date(today().getFullYear(), today().getMonth() - k, 1));
+    var perM = months.map(function (m0, ix) { var m1 = ix < 5 ? months[ix + 1] : new Date(today().getFullYear(), today().getMonth() + 1, 1); return S.payments.filter(function (p) { return p.account === 'business' && D(p.received_on) >= m0 && D(p.received_on) < m1; }).reduce(function (s, p) { return s + Number(p.amount); }, 0); });
+    var byClient = {}; S.payments.filter(function (p) { return p.account === 'business'; }).forEach(function (p) { var n = clientName(p.client_id); byClient[n] = (byClient[n] || 0) + Number(p.amount); });
+    return title + '<div class="grid g4"><div class="panel stat"><b>' + R2(feesM) + '</b><span>Fees received this month (last month ' + R2(feesL) + ')</span></div><div class="panel stat"><b>' + R2(owed) + '</b><span>Owed by clients</span></div><div class="panel stat"><b style="color:var(--red)">' + R2(od) + '</b><span>Overdue</span></div><div class="panel stat"><b>' + R2(S.time.filter(unbilled).reduce(function (s, t) { return s + t.hours * t.rate; }, 0)) + '</b><span>Unbilled time</span></div></div>' +
+      '<div class="grid g2"><div class="panel"><div class="hd"><h2>Fees received, last 6 months</h2><a href="#payments">Payments</a></div>' + lineChart(months.map(function (m0) { return m0.toLocaleDateString('en-ZA', { month: 'short' }); }), [{ data: perM.map(function (x) { return Math.round(x); }), color: '#d3a728', fill: true }]) + '</div><div class="panel"><div class="hd"><h2>Fees by client</h2></div>' + bars(Object.keys(byClient).map(function (n) { return [n, Math.round(byClient[n])]; }).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 8)).replace(/(\d+)<\/span><\/div>/g, function (m, n) { return R2(n) + '</span></div>'; }) + '</div></div>';
+  };
+  document.addEventListener('click', function (e) { var b = e.target.closest('[data-dashtab]'); if (!b) return; S.ui.dashTab = b.dataset.dashtab; render(); });
 
   /* ---------- Router ---------- */
   function current() { var h = location.hash.slice(1); if (h.indexOf('matter=') === 0) return 'matters'; if (h.indexOf('lead=') === 0) return 'inbox'; return V[h] ? h : 'dashboard'; }
