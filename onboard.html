@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Client onboarding | Labour Law Alliance</title>
+<link rel="icon" href="/assets/images/favicon-32.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#16203b;--muted:#5b6475;--line:#e2e5ec;--bg:#f4f5f8;--gold:#a07a12;--accent:#16203b;--ok:#2e7d32;--err:#b3261e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 'Plus Jakarta Sans',system-ui,sans-serif}
+.bar{height:6px;background:linear-gradient(90deg,#16203b 0%,#349cfc 35%,#d3a728 70%,#fd5d14 100%)}
+.wrap{max-width:720px;margin:0 auto;padding:28px 16px 60px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px}
+header img{height:46px;width:auto}
+header span{font-size:13px;color:var(--muted)}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:26px;box-shadow:0 10px 30px rgba(22,32,59,.06);margin-bottom:16px}
+h1{font-size:24px;margin:0 0 6px;letter-spacing:-.01em}
+h2{font-size:17px;margin:0 0 4px}
+p{margin:0 0 12px}
+.muted{color:var(--muted)}
+.steps{display:flex;gap:6px;margin:0 0 18px;padding:0;list-style:none;font-size:13px}
+.steps li{flex:1;padding:8px 10px;border-radius:10px;background:#eceef3;color:var(--muted);font-weight:600;text-align:center}
+.steps li.on{background:var(--ink);color:#fff}
+.steps li.done{background:#e6efe7;color:var(--ok)}
+label{display:block;font-weight:600;font-size:13.5px;margin:12px 0 5px}
+input[type=text],input[type=email],input[type=tel],textarea{width:100%;padding:11px 12px;border:1px solid #cdd2dc;border-radius:10px;font:inherit;color:inherit;background:#fff}
+input:focus,textarea:focus{outline:2px solid #349cfc;outline-offset:1px;border-color:transparent}
+textarea{min-height:76px;resize:vertical}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+@media (max-width:600px){.grid{grid-template-columns:1fr}.card{padding:20px}.steps li span{display:none}}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 20px;border-radius:10px;border:1px solid var(--ink);background:var(--ink);color:#fff;font:600 15px 'Plus Jakarta Sans',sans-serif;cursor:pointer}
+.btn.sec{background:#fff;color:var(--ink);border-color:#cdd2dc}
+.btn:disabled{opacity:.55;cursor:default}
+.actions{display:flex;gap:10px;justify-content:space-between;margin-top:20px;flex-wrap:wrap}
+.drop{border:2px dashed #cdd2dc;border-radius:12px;padding:16px;text-align:center;background:#fafbfc}
+.drop b{display:block;margin-bottom:2px}
+.file{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;margin-top:8px;font-size:14px}
+.file .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file .s{font-size:12.5px;color:var(--muted)}
+.file .ok{color:var(--ok);font-weight:600}
+.file .bad{color:var(--err);font-weight:600}
+.file button{border:0;background:none;color:var(--muted);cursor:pointer;font-size:18px;line-height:1}
+iframe{width:100%;height:420px;border:1px solid var(--line);border-radius:12px;background:#fff}
+.check{display:flex;gap:10px;align-items:flex-start;font-weight:400;font-size:14.5px;margin-top:14px}
+.check input{margin-top:4px;width:18px;height:18px;flex:0 0 18px}
+.msg{color:var(--err);font-weight:600;min-height:1.4em;margin-top:12px}
+.center{text-align:center}
+.tick{width:60px;height:60px;border-radius:50%;background:#e6efe7;color:var(--ok);display:grid;place-items:center;margin:0 auto 12px;font-size:30px}
+.hidden{display:none!important}
+.note{font-size:13px;color:var(--muted);margin-top:14px}
+</style>
+</head>
+<body>
+<div class="bar"></div>
+<div class="wrap">
+  <header><img src="/assets/images/logo.png?v=2" alt="Labour Law Alliance"><span>Secure client onboarding</span></header>
+
+  <div class="card" id="loading"><p class="muted">Opening your onboarding form…</p></div>
+
+  <div class="card hidden" id="stop"><h1 id="stop-h">This link is not valid</h1><p class="muted" id="stop-p">Please ask us for a new link.</p></div>
+
+  <div class="hidden" id="flow">
+    <ol class="steps"><li id="s1" class="on">1<span>. Your details</span></li><li id="s2">2<span>. Documents</span></li><li id="s3">3<span>. Agreement</span></li></ol>
+
+    <form class="card" id="p1" novalidate>
+      <h1 id="hello">Welcome</h1>
+      <p class="muted">Please check and complete your details. It takes about five minutes, and everything you send goes straight to your attorney’s secure file.</p>
+      <div class="grid">
+        <div id="cp-wrap"><label for="contact_person">Contact person</label><input type="text" id="contact_person" autocomplete="name" maxlength="120"></div>
+        <div><label for="email">Email address</label><input type="email" id="email" autocomplete="email" maxlength="200" required></div>
+        <div><label for="phone">Cellphone number</label><input type="tel" id="phone" autocomplete="tel" maxlength="40" required></div>
+        <div><label for="id_or_reg_no" id="idlbl">ID or passport number</label><input type="text" id="id_or_reg_no" maxlength="40" required></div>
+      </div>
+      <label for="address">Physical address</label><textarea id="address" maxlength="400" autocomplete="street-address"></textarea>
+      <p class="msg" id="m1" role="alert"></p>
+      <div class="actions"><span></span><button class="btn" type="submit">Continue</button></div>
+    </form>
+
+    <div class="card hidden" id="p2">
+      <h2>Your documents</h2>
+      <p class="muted">Clear photos or PDFs are fine. Each file can be up to 10 MB.</p>
+      <label>Copy of your ID or passport <span class="muted" id="idreq">(needed for FICA)</span></label>
+      <div class="drop"><b>Choose a file</b><input type="file" id="f-id" accept="image/*,application/pdf"></div>
+      <div id="list-id"></div>
+      <label style="margin-top:18px">Supporting documents</label>
+      <p class="muted" style="margin:0 0 8px;font-size:13.5px" id="supp-hint">Employment contract, payslips, dismissal letter, notices of hearing, and anything else about your case.</p>
+      <div class="drop"><b>Choose files</b><input type="file" id="f-docs" accept="image/*,application/pdf,.doc,.docx" multiple></div>
+      <div id="list-docs"></div>
+      <p class="msg" id="m2" role="alert"></p>
+      <div class="actions"><button class="btn sec" type="button" id="back2">Back</button><button class="btn" type="button" id="next2">Continue</button></div>
+    </div>
+
+    <form class="card hidden" id="p3" novalidate>
+      <h2>Engagement letter and privacy consent</h2>
+      <p class="muted">Please read the engagement letter. It sets out what we will do for you and how fees work.</p>
+      <iframe id="letter" sandbox="" title="Engagement letter"></iframe>
+      <label class="check"><input type="checkbox" id="accept"> <span>I have read the engagement letter and accept its terms.</span></label>
+      <label class="check"><input type="checkbox" id="popia"> <span>I consent to <b id="firm-n">the firm</b> processing my personal information, including the documents I upload, to provide legal services to me, as allowed by the Protection of Personal Information Act, 2013. It will be kept confidential and secure.</span></label>
+      <label for="sign">Type your full name to sign</label><input type="text" id="sign" autocomplete="name" maxlength="120">
+      <p class="msg" id="m3" role="alert"></p>
+      <div class="actions"><button class="btn sec" type="button" id="back3">Back</button><button class="btn" type="submit" id="send">Submit</button></div>
+      <p class="note">Your answers and documents go only to the firm. This page is private and cannot be found on Google.</p>
+    </form>
+  </div>
+
+  <div class="card hidden center" id="done"><div class="tick">✓</div><h1>Thank you</h1><p class="muted" id="done-p">We have your details and documents. Your attorney will be in touch.</p></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+(function () {
+  var sb = window.supabase.createClient('https://ktsvmkfrrxuijmgjdbwr.supabase.co', 'sb_publishable_E-C0YA_K3UpDWbbWqS9Lng__7pR26p9', { auth: { persistSession: false, autoRefreshToken: false } });
+  var $ = function (id) { return document.getElementById(id); };
+  var token = (location.hash || '').slice(1).replace(/[^a-f0-9]/gi, '');
+  var info = null, files = [], busy = 0;
+  var MAX = 10 * 1024 * 1024;
+  function show(id) { ['loading', 'stop', 'flow', 'done'].forEach(function (x) { $(x).classList.toggle('hidden', x !== id); }); }
+  function stop(h, p) { $('stop-h').textContent = h; $('stop-p').textContent = p; show('stop'); }
+  function step(n) { [1, 2, 3].forEach(function (i) { $('p' + i).classList.toggle('hidden', i !== n); $('s' + i).className = i < n ? 'done' : i === n ? 'on' : ''; }); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  function size(b) { return b < 1048576 ? Math.round(b / 1024) + ' KB' : (b / 1048576).toFixed(1) + ' MB'; }
+  function uuid() { return crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2); }
+  function draw(kind) {
+    var box = $('list-' + kind); box.innerHTML = '';
+    files.filter(function (f) { return f.kind === kind; }).forEach(function (f) {
+      var row = document.createElement('div'); row.className = 'file';
+      var n = document.createElement('span'); n.className = 'n'; n.textContent = f.name;
+      var s = document.createElement('span'); s.className = 's ' + (f.state === 'ok' ? 'ok' : f.state === 'bad' ? 'bad' : ''); s.textContent = f.state === 'ok' ? 'Uploaded · ' + size(f.size) : f.state === 'bad' ? f.err : 'Uploading…';
+      var x = document.createElement('button'); x.type = 'button'; x.setAttribute('aria-label', 'Remove ' + f.name); x.textContent = '×';
+      x.onclick = function () { files = files.filter(function (y) { return y !== f; }); draw(kind); };
+      row.appendChild(n); row.appendChild(s); if (f.state !== 'up') row.appendChild(x); box.appendChild(row);
+    });
+  }
+  async function add(kind, list) {
+    $('m2').textContent = '';
+    for (var i = 0; i < list.length; i++) {
+      var file = list[i];
+      if (files.length >= 12) { $('m2').textContent = 'You can send up to 12 files here. Email any others to us.'; break; }
+      var f = { kind: kind, name: file.name, size: file.size, mime: file.type || 'application/octet-stream', label: kind === 'id' ? 'ID document' : 'Client upload', state: 'up' };
+      if (kind === 'id') files = files.filter(function (y) { return y.kind !== 'id'; });
+      files.push(f); draw(kind);
+      if (file.size > MAX) { f.state = 'bad'; f.err = 'Too large (max 10 MB)'; draw(kind); continue; }
+      busy++;
+      f.path = 'onboarding/' + token + '/' + uuid() + '-' + file.name.replace(/[^\w.\- ]+/g, '_').slice(-100);
+      var r = await sb.storage.from('documents').upload(f.path, file, { contentType: f.mime, upsert: false });
+      busy--;
+      if (r.error) { f.state = 'bad'; f.err = 'Could not upload. Try again.'; } else f.state = 'ok';
+      draw(kind);
+    }
+  }
+  $('f-id').addEventListener('change', function () { add('id', this.files); this.value = ''; });
+  $('f-docs').addEventListener('change', function () { add('docs', this.files); this.value = ''; });
+
+  $('p1').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var em = $('email').value.trim(), ph = $('phone').value.trim(), id = $('id_or_reg_no').value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) { $('m1').textContent = 'Please enter a valid email address.'; return; }
+    if (ph.replace(/\D/g, '').length < 9) { $('m1').textContent = 'Please enter your cellphone number.'; return; }
+    if (id.length < 4) { $('m1').textContent = 'Please enter your ' + $('idlbl').textContent.toLowerCase() + '.'; return; }
+    $('m1').textContent = ''; step(2);
+  });
+  $('back2').onclick = function () { step(1); };
+  $('next2').onclick = function () {
+    if (busy) { $('m2').textContent = 'Please wait for the uploads to finish.'; return; }
+    if (!files.some(function (f) { return f.kind === 'id' && f.state === 'ok'; }) && !confirm('You have not added a copy of your ID. Continue without it? Your attorney will ask for it later.')) return;
+    step(3);
+  };
+  $('back3').onclick = function () { step(2); };
+  $('p3').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var nm = $('sign').value.trim();
+    if (!$('accept').checked) { $('m3').textContent = 'Please tick that you accept the engagement letter.'; return; }
+    if (!$('popia').checked) { $('m3').textContent = 'Please tick the privacy consent.'; return; }
+    if (nm.length < 3) { $('m3').textContent = 'Type your full name to sign.'; return; }
+    $('send').disabled = true; $('m3').textContent = '';
+    var data = { contact_person: $('contact_person').value, email: $('email').value, phone: $('phone').value, id_or_reg_no: $('id_or_reg_no').value, address: $('address').value, accepted_name: nm, popia: true, accepted_at: new Date().toISOString(), user_agent: navigator.userAgent.slice(0, 200) };
+    var up = files.filter(function (f) { return f.state === 'ok'; }).map(function (f) { return { path: f.path, name: f.name, size: f.size, mime: f.mime, kind: f.kind, label: f.label }; });
+    var r = await sb.rpc('onboarding_submit', { p_token: token, p_data: data, p_files: up });
+    $('send').disabled = false;
+    if (r.error) { $('m3').textContent = r.error.message || 'Something went wrong. Please try again.'; return; }
+    $('done-p').textContent = 'We have your details' + (up.length ? ' and ' + up.length + ' document' + (up.length === 1 ? '' : 's') : '') + '. Your attorney will be in touch. You can close this page.';
+    show('done'); history.replaceState(null, '', location.pathname);
+  });
+
+  async function start() {
+    if (token.length < 40) return stop('This link is not complete', 'Please open the full link from your email or WhatsApp message, or ask us for a new one.');
+    var r = await sb.rpc('onboarding_get', { p_token: token });
+    if (r.error || !r.data) return stop('This link is not valid', 'Please ask us for a new link.');
+    if (r.data.status === 'done') return stop('Already completed', 'Thank you, we already have your details. If you need to send more documents, reply to our email.');
+    if (r.data.status === 'expired') return stop('This link has expired', 'Please ask us for a new one' + (r.data.phone ? ' on ' + r.data.phone : '') + '.');
+    info = r.data; var c = info.client || {};
+    document.title = 'Client onboarding | ' + (info.firm || 'Labour Law Alliance');
+    $('hello').textContent = 'Welcome, ' + (c.kind === 'employer' ? c.name : (c.contact_person || c.name || '').split(' ')[0] || '');
+    $('firm-n').textContent = info.firm || 'the firm';
+    ['contact_person', 'email', 'phone', 'id_or_reg_no', 'address'].forEach(function (k) { if (c[k]) $(k).value = c[k]; });
+    if (c.kind === 'employer') { $('idlbl').textContent = 'Company registration number'; $('idreq').textContent = '(ID of the person signing, for FICA)'; $('supp-hint').textContent = 'Company registration documents, the employee’s contract, disciplinary records, and anything else about the matter.'; }
+    else $('cp-wrap').classList.add('hidden');
+    $('letter').srcdoc = info.letter_html || '<p style="font-family:sans-serif">The engagement letter will be sent to you separately.</p>';
+    show('flow');
+  }
+  start();
+})();
+</script>
+</body>
+</html>
