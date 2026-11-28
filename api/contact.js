@@ -61,6 +61,14 @@ export default async function handler(req, res) {
     ? [["Full Name", name], ['Email Address', d.email], ['Phone Number', d.phone], ['Relationship to Matter', d.relationship], ['Region/Location', d.region], ['Nature of Request/Message', d.message]]
     : [["Full Name", name], ['Email Address', d.email], ['Subject', d.subject], ['Message', d.message]];
 
+  // Which page of our site the form was sent from (browsers send it as the Referer header).
+  let page = '';
+  try {
+    const u = new URL(req.headers.referer || '');
+    if (/(^|\.)labourlawalliance\.co\.za$|^labour-kappa\.vercel\.app$/.test(u.hostname)) page = (u.pathname || '/').slice(0, 300);
+  } catch {}
+  if (page) rows.push(['Sent From Page', page]);
+
   const ref = randomUUID();
   const re = form === "booking" ? "Appointment Request" : form === "enquiry" ? "Consultation Enquiry" : "Contact Message";
   const intro = form === "booking"
@@ -73,7 +81,7 @@ export default async function handler(req, res) {
 
   // Save the lead in the CRM and email the office at the same time.
   // The visitor sees success if at least one of the two worked, so no enquiry is lost.
-  const [saved, emailed] = await Promise.all([saveLead(form, ref, d), sendEmail()]);
+  const [saved, emailed] = await Promise.all([saveLead(form, ref, d, page), sendEmail()]);
   if (!saved && !emailed) return res.status(502).json({ error: 'Could not send message.' });
   return res.status(200).json({ ok: true });
 
@@ -105,8 +113,9 @@ const SUPABASE_URL = 'https://ktsvmkfrrxuijmgjdbwr.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E-C0YA_K3UpDWbbWqS9Lng__7pR26p9';
 const LEAD_FIELDS = ['first_name', 'last_name', 'email', 'phone', 'relationship', 'region', 'service', 'subject', 'message', 'preferred_date', 'preferred_time', 'meeting'];
 
-async function saveLead(form, ref, d) {
+async function saveLead(form, ref, d, page) {
   const lead = { form, ref };
+  if (page) { lead.page = page; lead.source = 'Website'; }
   for (const k of LEAD_FIELDS) if (d[k]) lead[k] = d[k];
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
