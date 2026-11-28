@@ -144,12 +144,13 @@
       sb.from('commissioners').select('*').order('name'),
       sb.from('onboarding').select('id,created_at,created_by,token,client_id,matter_id,expires_at,opened_at,completed_at,accepted_name').order('created_at', { ascending: false }),
       sb.from('catalog_items').select('*').order('name'),
-      sb.from('doc_shares').select('id,token,kind,doc_id,expires_at,revoked,views,last_viewed_at,response,responded_at,responded_name,response_note').order('created_at', { ascending: false })
+      sb.from('doc_shares').select('id,token,kind,doc_id,expires_at,revoked,views,last_viewed_at,response,responded_at,responded_name,response_note').order('created_at', { ascending: false }),
+      sb.from('pipeline_templates').select('*').order('sort')
     ]);
     var bad = res.find(function (r) { return r.error; });
     if (bad) { $('view').innerHTML = '<div class="callout p-red">Could not load data: ' + esc(bad.error.message) + '</div>'; return false; }
     S.leads = res[0].data; S.clients = res[1].data; S.matters = res[2].data; S.appts = res[3].data; S.deadlines = res[4].data;
-    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data; S.tasks = res[15].data; S.activity = res[16].data; S.trust = res[17].data; S.retainers = res[18].data; S.commissioners = res[19].data; S.onboarding = res[20].data; S.catalog = res[21].data; S.shares = res[22].data;
+    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data; S.tasks = res[15].data; S.activity = res[16].data; S.trust = res[17].data; S.retainers = res[18].data; S.commissioners = res[19].data; S.onboarding = res[20].data; S.catalog = res[21].data; S.shares = res[22].data; S.pipes = res[23].data;
     S.me = S.staff.find(function (s) { return S.user && (s.email || '').toLowerCase() === (S.user.email || '').toLowerCase(); }) || {};
     return true;
   }
@@ -996,10 +997,11 @@ function renderNav(cur) {
   };
   V.settings = function () {
     var tab = S.ui.sTab || 'Company details', st = S.settings || {};
-    var tabs = '<div class="subtabs">' + ['Company details', 'Banking & invoicing', 'Users', 'Email', 'Calendar & reminders', 'Integrations', 'POPIA'].map(function (x) { return '<button data-stab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    var tabs = '<div class="subtabs">' + ['Company details', 'Banking & invoicing', 'Users', 'Pipelines', 'Email', 'Calendar & reminders', 'Integrations', 'POPIA'].map(function (x) { return '<button data-stab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
     var canEdit = canMoney();
     var body;
-    if (tab === 'POPIA') body = popiaSettings();
+    if (tab === 'Pipelines') body = pipelinesSettings();
+    else if (tab === 'POPIA') body = popiaSettings();
     else if (tab === 'Calendar & reminders') body = calendarSettings();
     else if (tab === 'Email' || tab === 'Integrations') body = settings3(tab);
     else if (tab === 'Users') {
@@ -3406,6 +3408,124 @@ function renderNav(cur) {
   P2['rc-edit'] = function (el) { var p = byId(S.payments, el.dataset.id); if (p && p.method === 'Trust transfer') { toast('This payment came from trust. To undo it, reverse it in Payments → Trust ledger.'); return; } return _rcEdit(el); };
   var _openPay8 = P2['open-payment'];
   P2['open-payment'] = function (el) { var p = byId(S.payments, el.dataset.id); if (p && p.method === 'Trust transfer' && p.invoice_id) { location.hash = 'receipt=' + p.id; return; } return _openPay8(el); };
+
+  /* =====================================================================
+     PHASE 9: labour-law pipeline templates (boards per type of matter)
+     ===================================================================== */
+  function pipe(key) { return (S.pipes || []).find(function (p) { return p.key === key; }); }
+  function pipeStages(p) { return (p && p.stages || []).map(function (s) { return s.name; }); }
+  function stageOf(m, p) { var names = pipeStages(p); return names.indexOf(m.pipeline_stage) >= 0 ? m.pipeline_stage : names[0]; }
+  function daysSince(t) { return t ? Math.max(0, Math.floor((Date.now() - new Date(t).getTime()) / 864e5)) : 0; }
+  async function reloadTasks(mid) { var r = await sb.from('tasks').select('*').eq('matter_id', mid); if (!r.error) { S.tasks = S.tasks.filter(function (t) { return t.matter_id !== mid; }).concat(r.data); } }
+  async function moveMatter(m, key, stage) {
+    var before = S.tasks.filter(function (t) { return t.matter_id === m.id; }).length;
+    var r = await sb.from('matters').update({ pipeline: key || null, pipeline_stage: key ? (stage || null) : null }).eq('id', m.id).select().single();
+    if (r.error) { toast(r.error.message); return; }
+    upsertLocal(S.matters, r.data); await reloadTasks(m.id);
+    var added = S.tasks.filter(function (t) { return t.matter_id === m.id; }).length - before;
+    toast(key ? r.data.ref + ' moved to ' + r.data.pipeline_stage + (added > 0 ? ' · ' + added + ' task' + (added === 1 ? '' : 's') + ' added' : '') : r.data.ref + ' removed from the pipeline');
+    render();
+  }
+
+  /* ----- Pipeline page: Enquiries + one board per template ----- */
+  var _pipeBase = V.pipeline;
+  function pipeTabs(sel) {
+    var open = S.matters.filter(function (m) { return m.stage !== 'Closed'; });
+    return '<div class="subtabs" style="flex-wrap:wrap">' + [['enquiries', 'Enquiries', S.leads.filter(function (l) { return l.status !== 'closed' && l.status !== 'client'; }).length]].concat((S.pipes || []).filter(function (p) { return p.active; }).map(function (p) { return [p.key, p.name, open.filter(function (m) { return m.pipeline === p.key; }).length]; })).map(function (x) { return '<button data-pipe="' + x[0] + '" class="' + (x[0] === sel ? 'on' : '') + '">' + esc(x[1]) + ' <span class="meta">' + x[2] + '</span></button>'; }).join('') + '</div>';
+  }
+  V.pipeline = function () {
+    var sel = S.ui.pipe || 'enquiries', p = pipe(sel);
+    if (!p) { var h = _pipeBase(); var i = h.indexOf('<div class="board">'); return i < 0 ? h : h.slice(0, i) + pipeTabs('enquiries') + h.slice(i); }
+    var stages = pipeStages(p), ms = S.matters.filter(function (m) { return m.pipeline === p.key && (S.ui.pipeShowClosed || m.stage !== 'Closed'); });
+    var col = function (name, i) {
+      var here = ms.filter(function (m) { return stageOf(m, p) === name; });
+      var st = p.stages[i] || {};
+      return '<div class="col" data-mdrop="' + esc(name) + '"><h3><span title="' + esc((st.tasks || []).map(function (t) { return '• ' + t.title; }).join('\n')) + '">' + esc(name) + '</span><span>' + here.length + '</span></h3>' +
+        here.map(function (m) {
+          var open = S.tasks.filter(function (t) { return t.matter_id === m.id && t.status === 'open'; }), late = open.filter(function (t) { return t.due_date && daysLeft(t.due_date) < 0; }).length, d = daysSince(m.pipeline_moved_at);
+          var who = S.staff.find(function (s) { return s.email === m.assigned_email; });
+          return '<button class="card" draggable="true" data-mdrag="' + m.id + '" data-matter="' + m.id + '"><span class="mono meta">' + esc(m.ref) + '</span><b>' + esc(m.title) + '</b><span class="meta">' + esc(clientName(m.client_id)) + '</span>' +
+            '<span class="meta" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px"><span title="Days in this stage">' + d + 'd</span>' + (open.length ? '<span>' + open.length + ' task' + (open.length === 1 ? '' : 's') + '</span>' : '') + (late ? '<span style="color:var(--red)">' + late + ' late</span>' : '') + (m.next_date ? '<span>' + fmt(m.next_date) + '</span>' : '') + (who ? '<span>' + esc((who.full_name || who.email).split(' ')[0]) + '</span>' : '') + '</span></button>';
+        }).join('') + (st.tasks && st.tasks.length ? '<span class="meta" style="margin-top:auto;font-size:11.5px">' + st.tasks.length + ' task' + (st.tasks.length === 1 ? '' : 's') + ' added on entry</span>' : '') + '</div>';
+    };
+    return head('Pipeline', esc(p.name), esc(p.description || '') + ' Drag a matter to the next stage: its tasks are added automatically for the responsible attorney.', '<button class="btn pri" data-act="pipe-new-matter" data-key="' + p.key + '">New matter</button><button class="btn" data-act="pipe-add" data-key="' + p.key + '">Add existing matter</button>') +
+      pipeTabs(sel) +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin:4px 0 10px;flex-wrap:wrap"><span class="meta">' + ms.length + ' matter' + (ms.length === 1 ? '' : 's') + ' · hover a column title to see its tasks</span><label class="check" style="font-weight:400"><input type="checkbox" id="pipe-closed"' + (S.ui.pipeShowClosed ? ' checked' : '') + '> Show closed matters</label></div>' +
+      '<div class="board">' + stages.map(col).join('') + '</div>';
+  };
+  document.addEventListener('click', function (e) { var b = e.target.closest('[data-pipe]'); if (!b) return; S.ui.pipe = b.dataset.pipe; render(); });
+  document.addEventListener('change', function (e) { if (e.target.id === 'pipe-closed') { S.ui.pipeShowClosed = e.target.checked; render(); } });
+  document.addEventListener('dragstart', function (e) { var c = e.target.closest && e.target.closest('[data-mdrag]'); if (!c) return; e.dataTransfer.setData('text/matter', c.dataset.mdrag); e.dataTransfer.effectAllowed = 'move'; c.style.opacity = '.5'; });
+  document.addEventListener('dragend', function (e) { var c = e.target.closest && e.target.closest('[data-mdrag]'); if (c) c.style.opacity = ''; document.querySelectorAll('[data-mdrop]').forEach(function (x) { x.style.outline = ''; }); });
+  document.addEventListener('dragover', function (e) { var c = e.target.closest && e.target.closest('[data-mdrop]'); if (!c || !Array.prototype.includes.call(e.dataTransfer.types, 'text/matter')) return; e.preventDefault(); document.querySelectorAll('[data-mdrop]').forEach(function (x) { x.style.outline = x === c ? '2px dashed var(--accent)' : ''; }); });
+  document.addEventListener('drop', function (e) { var c = e.target.closest && e.target.closest('[data-mdrop]'); if (!c) return; var id = e.dataTransfer.getData('text/matter'); if (!id) return; e.preventDefault(); c.style.outline = ''; var m = byId(S.matters, id); if (m && stageOf(m, pipe(m.pipeline)) !== c.dataset.mdrop) moveMatter(m, m.pipeline, c.dataset.mdrop); });
+  P2['pipe-add'] = function (el) {
+    var p = pipe(el.dataset.key), cand = S.matters.filter(function (m) { return m.pipeline !== p.key && m.stage !== 'Closed'; });
+    if (!cand.length) { toast('Every open matter is already in this pipeline.'); return; }
+    openForm({ title: 'Add a matter to ' + p.name, saveLabel: 'Add', fields: [{ k: 'matter_id', label: 'Matter', type: 'select', req: true, full: true, options: cand.map(function (m) { return [m.id, m.ref + ' · ' + m.title + (m.pipeline && pipe(m.pipeline) ? ' (now in ' + pipe(m.pipeline).name + ')' : '')]; }) }, { k: 'stage', label: 'Start at stage', type: 'select', full: true, options: pipeStages(p) }],
+      values: { stage: pipeStages(p)[0] }, save: async function (d) { var m = byId(S.matters, d.matter_id); setTimeout(function () { moveMatter(m, p.key, d.stage); }, 30); } });
+  };
+  P2['pipe-new-matter'] = function (el) {
+    var p = pipe(el.dataset.key), rx = p && p.dispute_match ? new RegExp(p.dispute_match, 'i') : null;
+    var dt = rx ? DISPUTES.find(function (x) { return rx.test(x); }) : null;
+    editMatter(null, dt ? { dispute_type: dt } : null);
+  };
+
+  /* ----- Matter page: pipeline strip ----- */
+  var _matterDetail = matterDetail;
+  matterDetail = function (m) {
+    S.tasksChecked = S.tasksChecked || {}; if (!S.tasksChecked[m.id]) { S.tasksChecked[m.id] = 1; reloadTasks(m.id).then(function () { if (location.hash === '#matter=' + m.id) render(); }); }
+    var h = _matterDetail(m), p = pipe(m.pipeline), cur = p ? stageOf(m, p) : null, ci = p ? pipeStages(p).indexOf(cur) : -1;
+    var strip = '<div class="panel"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px"><span class="meta">Pipeline' + (p ? ' · in this stage ' + daysSince(m.pipeline_moved_at) + ' day' + (daysSince(m.pipeline_moved_at) === 1 ? '' : 's') : '') + '</span><select data-mpipe="' + m.id + '" style="max-width:300px"><option value="">Not in a pipeline</option>' + (S.pipes || []).filter(function (x) { return x.active || x.key === m.pipeline; }).map(function (x) { return '<option value="' + x.key + '"' + (x.key === m.pipeline ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') + '</select></div>' +
+      (p ? '<div class="steps">' + pipeStages(p).map(function (s, i) { return '<button data-mpstage="' + esc(s) + '" data-id="' + m.id + '" class="' + (i < ci ? 'done' : i === ci ? 'now' : '') + '" title="' + esc(((p.stages[i] || {}).tasks || []).map(function (t) { return '• ' + t.title; }).join('\n')) + '">' + esc(s) + '</button>'; }).join('') + '</div>' + (ci < pipeStages(p).length - 1 ? '<div class="meta" style="margin-top:8px">Next: <b>' + esc(pipeStages(p)[ci + 1]) + '</b>' + (((p.stages[ci + 1] || {}).tasks || []).length ? ' adds ' + p.stages[ci + 1].tasks.map(function (t) { return esc(t.title); }).join('; ') : '') + '</div>' : '') : '<div class="meta">Choose a pipeline to track this matter on a board and add each stage’s tasks automatically.</div>') + '</div>';
+    var i = h.indexOf('<div class="panel"><div class="tabs" role="tablist">');
+    return i < 0 ? h : h.slice(0, i) + strip + h.slice(i);
+  };
+  document.addEventListener('click', function (e) { var b = e.target.closest('[data-mpstage]'); if (!b) return; var m = byId(S.matters, b.dataset.id); if (!m || b.classList.contains('now')) return; moveMatter(m, m.pipeline, b.dataset.mpstage); });
+  document.addEventListener('change', function (e) { var s = e.target.dataset && e.target.dataset.mpipe; if (!s) return; var m = byId(S.matters, s); if (m) moveMatter(m, e.target.value || null, null); });
+
+  /* ----- Company settings → Pipelines: edit the templates ----- */
+  function stagesToText(p) { return (p.stages || []).map(function (s) { return s.name + ((s.tasks || []).length ? ': ' + s.tasks.map(function (t) { return t.title + ' (' + (t.days == null ? 7 : t.days) + ')'; }).join('; ') : ''); }).join('\n'); }
+  function textToStages(txt) {
+    return txt.split('\n').map(function (l) { return l.trim(); }).filter(Boolean).map(function (l) {
+      var i = l.indexOf(':'), name = (i < 0 ? l : l.slice(0, i)).trim().slice(0, 80), rest = i < 0 ? '' : l.slice(i + 1);
+      var tasks = rest.split(';').map(function (t) { return t.trim(); }).filter(Boolean).map(function (t) { var mm = /\((\d{1,3})\)\s*$/.exec(t); return { title: (mm ? t.slice(0, mm.index) : t).trim().slice(0, 250), days: mm ? Number(mm[1]) : 7 }; }).filter(function (t) { return t.title; });
+      return { name: name, tasks: tasks };
+    }).filter(function (s) { return s.name; });
+  }
+  function pipelinesSettings() {
+    var can = isPartner();
+    return '<div class="panel"><div class="hd"><h2>Pipeline templates</h2>' + (can ? '<button class="btn pri" data-act="pipe-tpl-new">New template</button>' : '') + '</div><p class="sub" style="margin:0 0 12px">Each template is a board on the Pipeline page. New matters are placed in the template that matches their type, and each stage adds its tasks when a matter arrives there.</p><div class="tbl"><table><tr><th>Template</th><th>Stages</th><th>Tasks</th><th>Open matters</th><th>Status</th></tr>' +
+      (S.pipes || []).map(function (p) { var n = (p.stages || []).reduce(function (s, x) { return s + (x.tasks || []).length; }, 0); return '<tr class="click" data-act="pipe-tpl-edit" data-key="' + p.key + '"><td><b>' + esc(p.name) + '</b><div class="meta">' + esc(p.description || '') + '</div></td><td class="mono">' + (p.stages || []).length + '</td><td class="mono">' + n + '</td><td class="mono">' + S.matters.filter(function (m) { return m.pipeline === p.key && m.stage !== 'Closed'; }).length + '</td><td>' + (p.active ? pill('Active', 'p-green') : pill('Hidden', '')) + '</td></tr>'; }).join('') + '</table></div></div>';
+  }
+  function editPipe(p) {
+    var isNew = !p, can = isPartner();
+    openForm({
+      title: isNew ? 'New pipeline template' : p.name, saveLabel: can ? 'Save template' : 'Close',
+      fields: [{ k: 'name', label: 'Name', req: true }, { k: 'active', label: 'Show on the Pipeline page', type: 'checkbox' }, { k: 'description', label: 'Description', full: true }, { k: 'dispute_match', label: 'Matter types it applies to', full: true, hint: 'Words from the “Type of matter” list, separated by | (for example: dismissal|constructive). New matters of that type start in this pipeline.' }, { k: 'stages_text', label: 'Stages and tasks', type: 'textarea', full: true, req: true, hint: 'One stage per line. After a colon, list the tasks separated by semicolons, with the days until each is due in brackets. Example: Referral filed: Draft LRA Form 7.11 (3); File with the CCMA (4)' }],
+      values: p ? Object.assign({}, p, { stages_text: stagesToText(p) }) : { active: true, stages_text: 'Intake: Get the documents (2)\nIn progress\nClosed: Send the final invoice (3)' },
+      save: async function (d) {
+        if (!can) return;
+        var stages = textToStages(d.stages_text); if (stages.length < 2) return 'Add at least two stages.';
+        var names = stages.map(function (s) { return s.name.toLowerCase(); }); if (names.some(function (n, i) { return names.indexOf(n) !== i; })) return 'Two stages have the same name.';
+        if (d.dispute_match) { try { new RegExp(d.dispute_match, 'i'); } catch (er) { return 'Check the matter types: use words separated by |.'; } }
+        var row = { name: d.name.trim(), description: d.description || null, dispute_match: d.dispute_match ? d.dispute_match.toLowerCase().trim() : null, active: !!d.active, stages: stages };
+        var r;
+        if (isNew) { row.key = (d.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'pipe') + '_' + Math.random().toString(36).slice(2, 6); row.sort = 100 + (S.pipes || []).length; r = await sb.from('pipeline_templates').insert(row).select().single(); }
+        else {
+          var gone = pipeStages(p).filter(function (n) { return !stages.some(function (s) { return s.name === n; }); });
+          var stranded = S.matters.filter(function (m) { return m.pipeline === p.key && gone.indexOf(m.pipeline_stage) >= 0; });
+          if (stranded.length && !confirm(stranded.length + ' matter' + (stranded.length === 1 ? ' is' : 's are') + ' in a stage you removed or renamed. They will show in the first stage. Save anyway?')) return 'Not saved.';
+          r = await sb.from('pipeline_templates').update(row).eq('key', p.key).select().single();
+        }
+        if (r.error) return dbErr(r);
+        S.pipes = S.pipes.filter(function (x) { return x.key !== r.data.key; }).concat([r.data]); S.pipes.sort(function (a, b) { return a.sort - b.sort; }); toast('Template saved'); render();
+      },
+      del: isNew || !can ? null : async function () { var r = await sb.from('pipeline_templates').delete().eq('key', p.key); if (r.error) return dbErr(r); S.pipes = S.pipes.filter(function (x) { return x.key !== p.key; }); S.matters.forEach(function (m) { if (m.pipeline === p.key) { m.pipeline = null; m.pipeline_stage = null; } }); toast('Template deleted. Its matters are no longer on a board.'); render(); }
+    });
+  }
+  P2['pipe-tpl-new'] = function () { editPipe(null); };
+  P2['pipe-tpl-edit'] = function (el) { editPipe(pipe(el.dataset.key)); };
 
   /* ----- Shell: popovers, theme, sidebar ----- */
   function popover(html, anchor, cls) {
