@@ -143,12 +143,13 @@
       sb.from('retainers').select('*').order('created_at'),
       sb.from('commissioners').select('*').order('name'),
       sb.from('onboarding').select('id,created_at,created_by,token,client_id,matter_id,expires_at,opened_at,completed_at,accepted_name').order('created_at', { ascending: false }),
-      sb.from('catalog_items').select('*').order('name')
+      sb.from('catalog_items').select('*').order('name'),
+      sb.from('doc_shares').select('id,token,kind,doc_id,expires_at,revoked,views,last_viewed_at,response,responded_at,responded_name,response_note').order('created_at', { ascending: false })
     ]);
     var bad = res.find(function (r) { return r.error; });
     if (bad) { $('view').innerHTML = '<div class="callout p-red">Could not load data: ' + esc(bad.error.message) + '</div>'; return false; }
     S.leads = res[0].data; S.clients = res[1].data; S.matters = res[2].data; S.appts = res[3].data; S.deadlines = res[4].data;
-    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data; S.tasks = res[15].data; S.activity = res[16].data; S.trust = res[17].data; S.retainers = res[18].data; S.commissioners = res[19].data; S.onboarding = res[20].data; S.catalog = res[21].data;
+    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data; S.tasks = res[15].data; S.activity = res[16].data; S.trust = res[17].data; S.retainers = res[18].data; S.commissioners = res[19].data; S.onboarding = res[20].data; S.catalog = res[21].data; S.shares = res[22].data;
     S.me = S.staff.find(function (s) { return S.user && (s.email || '').toLowerCase() === (S.user.email || '').toLowerCase(); }) || {};
     return true;
   }
@@ -3252,6 +3253,159 @@ function renderNav(cur) {
   var _openPay7 = P2['open-payment'];
   P2['open-payment'] = function (el) { var p = byId(S.payments, el.dataset.id); if (p && p.account === 'business' && p.method !== 'Trust transfer') { location.hash = 'receipt=' + p.id; return; } return _openPay7(el); };
   document.addEventListener('load', function (e) { var f = e.target; if (!f.classList || !f.classList.contains('docframe')) return; try { f.style.height = (f.contentDocument.documentElement.scrollHeight + 4) + 'px'; } catch (er) { /* cross-origin */ } }, true);
+
+  /* =====================================================================
+     PHASE 8: share links, paying invoices from trust, defaults for older documents
+     ===================================================================== */
+  function shareToken() { var a = new Uint8Array(32); crypto.getRandomValues(a); return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
+  function shareUrl(sh) { return location.origin + '/view#' + sh.token; }
+  function activeShare(kind, id) { return (S.shares || []).find(function (s) { return s.kind === kind && s.doc_id === id && !s.revoked && (!s.expires_at || D(s.expires_at) > new Date()); }); }
+  function shareDoc(kind, id) {
+    if (kind === 'receipt') { var p = byId(S.payments, id); return p ? { html: receiptHtml(p), title: 'Payment receipt ' + (p.number || ''), client_id: p.client_id } : null; }
+    var d = byId(kind === 'quote' ? S.quotes : S.invoices, id); return d ? { html: docHtml(kind, d), title: (kind === 'quote' ? 'Quote ' : 'Invoice ') + d.number, client_id: d.client_id } : null;
+  }
+  async function ensureShare(kind, id, days) {
+    var x = shareDoc(kind, id); if (!x) throw new Error('Document not found.');
+    var cur = activeShare(kind, id), exp = days ? new Date(Date.now() + days * 864e5).toISOString() : null, r;
+    if (cur) { var upd = { html: x.html, title: x.title, updated_at: new Date().toISOString() }; if (days !== undefined) upd.expires_at = exp; r = await sb.from('doc_shares').update(upd).eq('id', cur.id).select('id,token,kind,doc_id,expires_at,revoked,views,last_viewed_at,response,responded_at,responded_name,response_note').single(); }
+    else r = await sb.from('doc_shares').insert({ token: shareToken(), kind: kind, doc_id: id, client_id: x.client_id, title: x.title, html: x.html, expires_at: days === undefined ? new Date(Date.now() + 90 * 864e5).toISOString() : exp }).select('id,token,kind,doc_id,expires_at,revoked,views,last_viewed_at,response,responded_at,responded_name,response_note').single();
+    if (r.error) throw new Error(r.error.message);
+    S.shares = (S.shares || []).filter(function (s) { return s.id !== r.data.id; }); S.shares.unshift(r.data); return r.data;
+  }
+  function refreshShare(kind, id) { if (activeShare(kind, id)) ensureShare(kind, id).catch(function () {}); }
+  function shareDialog(kind, id) {
+    var sh = activeShare(kind, id), x = shareDoc(kind, id); if (!x) return;
+    var c = byId(S.clients, x.client_id) || {}, url = sh ? shareUrl(sh) : '';
+    var info = sh ? '<div class="fld full"><label for="sh-url">Link anyone can open (no sign-in needed)</label><input id="sh-url" readonly value="' + esc(url) + '" onclick="this.select()"></div>' +
+      '<div class="full" style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn sm" data-act="sh-copy">Copy link</button>' + (c.phone ? '<a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/' + esc(String(c.phone).replace(/\D/g, '').replace(/^0/, '27')) + '?text=' + encodeURIComponent('Hello ' + (c.contact_person || c.name || '') + ', you can view your ' + x.title.toLowerCase() + ' here: ' + url) + '">Send by WhatsApp</a>' : '') + '<a class="btn sm" href="' + esc(url) + '" target="_blank" rel="noopener">Open</a><button type="button" class="btn sm danger" data-act="sh-off" data-kind="' + kind + '" data-id="' + id + '">Disable link</button></div>' +
+      '<p class="meta full" style="margin:0">' + (sh.expires_at ? 'Works until ' + fmt(sh.expires_at) : 'Never expires') + ' · Viewed ' + (sh.views || 0) + ' time' + (sh.views === 1 ? '' : 's') + (sh.last_viewed_at ? ', last on ' + fmtDT(sh.last_viewed_at) : '') + (sh.response ? ' · ' + (sh.response === 'accepted' ? 'Accepted' : 'Declined') + ' by ' + esc(sh.responded_name || '') + ' on ' + fmtDT(sh.responded_at) : '') + '</p>' : '<p class="sub full" style="margin:0">Create a private link to this ' + (kind === 'receipt' ? 'receipt' : kind) + '. Your client can view it, print it and download the PDF' + (kind === 'quote' ? ', and accept or decline the quote online' : '') + '. Only people with the link can open it, and it never shows anything else from the CRM.</p>';
+    openForm({
+      title: 'Share ' + x.title, saveLabel: sh ? 'Update link' : 'Create link',
+      fields: [{ k: 'days', label: 'Link expires', type: 'select', options: [['30', 'In 30 days'], ['90', 'In 90 days'], ['365', 'In a year'], ['0', 'Never']] }],
+      values: { days: sh && !sh.expires_at ? '0' : '90' }, extra: info,
+      save: async function (d) { try { await ensureShare(kind, id, Number(d.days) || 0); } catch (e) { return e.message; } toast(sh ? 'Link updated' : 'Link created'); setTimeout(function () { shareDialog(kind, id); render(); }, 60); }
+    });
+  }
+  P2['doc-share'] = function (el) { shareDialog(el.dataset.kind, el.dataset.id); };
+  P2['sh-copy'] = function () { var i = $('sh-url'); navigator.clipboard.writeText(i.value).then(function () { toast('Link copied'); }, function () { i.select(); }); };
+  P2['sh-off'] = async function (el) {
+    if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Click again to disable'; return; }
+    var sh = activeShare(el.dataset.kind, el.dataset.id); if (!sh) return;
+    var r = await sb.from('doc_shares').update({ revoked: true }).eq('id', sh.id).select('id,token,kind,doc_id,expires_at,revoked,views,last_viewed_at,response,responded_at,responded_name,response_note').single(); if (r.error) { toast(r.error.message); return; }
+    S.shares = S.shares.filter(function (s) { return s.id !== sh.id; }).concat([r.data]); $('modal-root').innerHTML = ''; toast('Link disabled. Anyone opening it now sees “not available”.'); render();
+  };
+
+  /* Emails get a “View online” button */
+  var _mailHtml = mailHtml;
+  mailHtml = function (title, message, summary, link, linkLabel) {
+    var h = _mailHtml(title, message, summary);
+    if (!link) return h;
+    var btn = '<tr><td align="center" style="padding:0 40px 28px"><a href="' + esc(link) + '" style="display:inline-block;background:#16203b;color:#ffffff;text-decoration:none;font:bold 15px Arial,sans-serif;padding:13px 26px;border-radius:6px">' + esc(linkLabel || 'View online') + '</a></td></tr>';
+    var i = h.lastIndexOf('<tr><td style="padding:14px 32px;background:#16203b');
+    return i < 0 ? h : h.slice(0, i) + btn + h.slice(i);
+  };
+  var _sendPage = sendPage;
+  sendPage = function (kind, id) {
+    var h = _sendPage(kind, id);
+    var sh = activeShare(kind, id);
+    var box = '<label class="check" style="font-weight:400"><input type="checkbox" id="em-link" checked> Include a link to view' + (kind === 'quote' ? ', download and accept the quote' : kind === 'invoice' ? ' and download the invoice' : ' and download the receipt') + ' online' + (sh ? ' (uses the existing link)' : ' (creates a private link that works for 90 days)') + '</label>';
+    return h.replace('<p class="meta" style="margin:6px 0 0">The office also gets a copy', box + '<p class="meta" style="margin:6px 0 0">The office also gets a copy');
+  };
+  P2['em-send'] = async function (el) {
+    var kind = el.dataset.kind, id = el.dataset.id, x = sendInfo(kind, id); if (!x) return;
+    var out = $('em-msg-out'); el.disabled = true; out.className = 'msg'; out.textContent = 'Preparing…';
+    try {
+      var link = null;
+      if ($('em-link') && $('em-link').checked) { out.textContent = 'Creating the online link…'; link = shareUrl(await ensureShare(kind, id)); }
+      var att = [];
+      if ($('em-pdf').checked) { out.textContent = 'Making the PDF…'; att.push(await x.pdf()); }
+      if ($('em-stmt') && $('em-stmt').checked) att.push(await x.statement());
+      out.textContent = 'Sending…';
+      var label = kind === 'quote' ? 'View and accept the quote' : kind === 'invoice' ? 'View invoice' : 'View receipt';
+      var err = await sendMail({ to: $('em-to').value, cc: $('em-cc').value, subject: $('em-subject').value.trim(), html: mailHtml(x.title, $('em-msg').value, x.summary, link, label), text: $('em-msg').value + (link ? '\n\n' + label + ': ' + link : ''), attachments: att });
+      if (err) { out.textContent = err; el.disabled = false; return; }
+    } catch (er) { out.textContent = er.message || 'Could not send.'; el.disabled = false; return; }
+    var now = new Date().toISOString(), r;
+    if (kind === 'quote') { r = await sb.from('quotes').update({ status: x.rec.status === 'draft' ? 'sent' : x.rec.status, sent_at: now }).eq('id', id).select().single(); if (!r.error) upsertLocal(S.quotes, r.data); }
+    if (kind === 'invoice') { r = await sb.from('invoices').update({ status: x.rec.status === 'draft' ? 'sent' : x.rec.status, sent_at: now }).eq('id', id).select().single(); if (!r.error) upsertLocal(S.invoices, r.data); }
+    if (kind === 'receipt') { r = await sb.from('payments').update({ thanks_sent_at: now }).eq('id', id).select().single(); if (!r.error) upsertLocal(S.payments, r.data); }
+    if (kind !== 'receipt') refreshShare(kind, id);
+    toast(kind === 'quote' ? 'Your quote has been sent.' : kind === 'invoice' ? 'Your invoice has been sent.' : 'The payment receipt has been sent.');
+    location.hash = x.back.slice(1);
+  };
+
+  /* View pages: Share button and link status */
+  var _viewPage = viewPage;
+  viewPage = function (kind, id) {
+    var h = _viewPage(kind, id), sh = activeShare(kind, id), all = (S.shares || []).filter(function (s) { return s.kind === kind && s.doc_id === id && s.response; })[0];
+    h = h.replace('<button class="btn sm" data-act="doc-print" data-kind="' + kind + '" data-id="' + id + '">PDF / Print</button>', '<button class="btn sm" data-act="doc-share" data-kind="' + kind + '" data-id="' + id + '">Share</button><button class="btn sm" data-act="doc-print" data-kind="' + kind + '" data-id="' + id + '">PDF / Print</button>');
+    var note = (all ? '<div class="callout ' + (all.response === 'accepted' ? 'p-green' : 'p-red') + '">' + (all.response === 'accepted' ? 'Accepted' : 'Declined') + ' online by <b>' + esc(all.responded_name || '') + '</b> on ' + fmtDT(all.responded_at) + (all.response_note ? ': “' + esc(all.response_note) + '”' : '') + '</div>' : '') +
+      (sh ? '<div class="callout">Shared online · viewed ' + (sh.views || 0) + ' time' + (sh.views === 1 ? '' : 's') + (sh.last_viewed_at ? ', last ' + fmtDT(sh.last_viewed_at) : '') + ' · <a href="#" data-act="doc-share" data-kind="' + kind + '" data-id="' + id + '">Manage link</a></div>' : '');
+    return note ? h.replace('<div class="panel" style="padding:0;overflow:hidden"><iframe', note + '<div class="panel" style="padding:0;overflow:hidden"><iframe') : h;
+  };
+  var _receiptPage = receiptPage;
+  receiptPage = function (id) { return _receiptPage(id).replace('<button class="btn sm" data-act="doc-print" data-kind="receipt"', '<button class="btn sm" data-act="doc-share" data-kind="receipt" data-id="' + id + '">Share</button><button class="btn sm" data-act="doc-print" data-kind="receipt"'); };
+
+  /* Keep shared copies up to date */
+  var _deSave = P2['de-save'];
+  P2['de-save'] = async function (el) { var dr = S.draft; await _deSave(el); if (dr && dr.id) refreshShare(dr.kind, dr.id); };
+  ['quote-mark', 'mark-sent', 'inv-void'].forEach(function (k) { var f = P2[k]; P2[k] = async function (el) { await f(el); var id = el.dataset.id; refreshShare(k === 'quote-mark' ? 'quote' : 'invoice', id); }; });
+
+  /* Older documents pick up today’s defaults when opened for editing */
+  var _startDraft = startDraft;
+  startDraft = function (kind, id) {
+    _startDraft(kind, id);
+    if (!id || !S.draft) return;
+    var d = S.draft.doc, st = S.settings || {};
+    if (!d.terms) d.terms = (kind === 'quote' ? st.quote_terms : st.invoice_terms) || '';
+    if (d.notes == null) d.notes = (kind === 'quote' ? st.quote_notes : st.invoice_notes) || '';
+    if (!d.subject && d.matter_id) { var m = byId(S.matters, d.matter_id); if (m) d.subject = m.title; }
+    if (kind === 'invoice' && !d.payment_terms) { var n = d.due_date && d.issue_date ? Math.round((D(d.due_date) - D(d.issue_date)) / 864e5) : null; var t = TERMS.find(function (x) { return x[2] === n; }); d.payment_terms = t ? t[0] : (d.due_date ? 'custom' : 'net14'); }
+    if (!d.attorney_email && d.matter_id) { var mm = byId(S.matters, d.matter_id); if (mm && mm.assigned_email) d.attorney_email = mm.assigned_email; }
+  };
+
+  /* Record payment: pay from the client’s trust balance */
+  var _payPage = payPage;
+  payPage = function (id) {
+    var inv = byId(S.invoices, id); var h = _payPage(id); if (!inv) return h;
+    var tb = trustBal(inv.client_id);
+    h = h.replace('<select id="pf-acc"><option value="business">Business account</option></select>', '<select id="pf-acc"><option value="business">Business account (paid by the client)</option>' + (tb > 0 ? '<option value="trust">From trust: ' + esc(R2(tb)) + ' held for this client</option>' : '') + '</select>');
+    return h.replace('Money held for a client goes through Payments → Trust ledger instead.', tb > 0 ? 'This client has ' + R2(tb) + ' in trust. Choose “From trust” under Deposit to, and the money moves from the trust ledger to settle this invoice.' : 'To pay this invoice from money held in trust, first record the trust deposit under Payments.');
+  };
+  document.addEventListener('change', function (e) {
+    if (e.target.id !== 'pf-acc') return;
+    var tr = e.target.value === 'trust', inv = byId(S.invoices, (location.hash.match(/pay=(.+)$/) || [])[1]); if (!inv) return;
+    ['pf-mode', 'pf-charges'].forEach(function (k) { $(k).disabled = tr; });
+    if (tr) { $('pf-amount').value = Math.min(trustBal(inv.client_id), invState(inv).bal).toFixed(2); $('pf-charges').value = ''; }
+    else $('pf-amount').value = invState(inv).bal.toFixed(2);
+  });
+  var _paySave = P2['pay-save'];
+  P2['pay-save'] = async function (el) {
+    var inv = byId(S.invoices, el.dataset.id);
+    if (!$('pf-acc') || $('pf-acc').value !== 'trust') { await _paySave(el); if (inv) refreshShare('invoice', inv.id); return; }
+    var s = invState(inv), amt = Number($('pf-amount').value), tb = trustBal(inv.client_id), msg = $('pf-msg');
+    if (!(amt > 0)) { msg.textContent = 'Enter the amount to transfer.'; return; }
+    if (amt > tb + 0.009) { msg.textContent = 'Only ' + R2(tb) + ' is held in trust for this client.'; return; }
+    if (amt > s.bal + 0.009) { msg.textContent = 'The balance due is only ' + R2(s.bal) + '.'; return; }
+    el.disabled = true; msg.className = 'msg'; msg.textContent = 'Transferring from trust…';
+    var r = await sb.rpc('trust_transfer', { p_client: inv.client_id, p_invoice: inv.id, p_amount: amt, p_date: $('pf-date').value, p_notes: [$('pf-ref').value.trim(), $('pf-notes').value.trim()].filter(Boolean).join(' · ') || null });
+    if (r.error) { el.disabled = false; msg.textContent = r.error.message; return; }
+    await refreshMoney();
+    if (inv.status === 'draft') { var u = await sb.from('invoices').update({ status: 'sent' }).eq('id', inv.id).select().single(); if (!u.error) upsertLocal(S.invoices, u.data); }
+    var entry = byId(S.trust, r.data), pay = entry && byId(S.payments, entry.payment_id), c = byId(S.clients, inv.client_id) || {};
+    if (pay && $('pf-thanks') && $('pf-thanks').checked && c.email) {
+      msg.textContent = 'Sending the receipt…';
+      try { var x = sendInfo('receipt', pay.id), pdf = await x.pdf(); var err = await sendMail({ to: c.email, subject: x.subject, html: mailHtml(x.title, x.msg.replace('Thank you for your payment.', 'We have settled invoice ' + inv.number + ' from the money you hold in our trust account.'), x.summary), text: x.msg, attachments: [pdf] }); if (!err) { var t = await sb.from('payments').update({ thanks_sent_at: new Date().toISOString() }).eq('id', pay.id).select().single(); if (!t.error) upsertLocal(S.payments, t.data); } }
+      catch (er) { toast('Transfer saved, but the receipt was not sent.'); }
+    }
+    refreshShare('invoice', inv.id);
+    toast(R2(amt) + ' transferred from trust to invoice ' + inv.number + '.');
+    location.hash = 'invoice=' + inv.id;
+  };
+  var _rcEdit = P2['rc-edit'];
+  P2['rc-edit'] = function (el) { var p = byId(S.payments, el.dataset.id); if (p && p.method === 'Trust transfer') { toast('This payment came from trust. To undo it, reverse it in Payments → Trust ledger.'); return; } return _rcEdit(el); };
+  var _openPay8 = P2['open-payment'];
+  P2['open-payment'] = function (el) { var p = byId(S.payments, el.dataset.id); if (p && p.method === 'Trust transfer' && p.invoice_id) { location.hash = 'receipt=' + p.id; return; } return _openPay8(el); };
 
   /* ----- Shell: popovers, theme, sidebar ----- */
   function popover(html, anchor, cls) {
