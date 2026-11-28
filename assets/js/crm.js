@@ -142,12 +142,13 @@
       sb.from('trust_entries').select('*').order('entry_date', { ascending: false }),
       sb.from('retainers').select('*').order('created_at'),
       sb.from('commissioners').select('*').order('name'),
-      sb.from('onboarding').select('id,created_at,created_by,token,client_id,matter_id,expires_at,opened_at,completed_at,accepted_name').order('created_at', { ascending: false })
+      sb.from('onboarding').select('id,created_at,created_by,token,client_id,matter_id,expires_at,opened_at,completed_at,accepted_name').order('created_at', { ascending: false }),
+      sb.from('catalog_items').select('*').order('name')
     ]);
     var bad = res.find(function (r) { return r.error; });
     if (bad) { $('view').innerHTML = '<div class="callout p-red">Could not load data: ' + esc(bad.error.message) + '</div>'; return false; }
     S.leads = res[0].data; S.clients = res[1].data; S.matters = res[2].data; S.appts = res[3].data; S.deadlines = res[4].data;
-    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data; S.tasks = res[15].data; S.activity = res[16].data; S.trust = res[17].data; S.retainers = res[18].data; S.commissioners = res[19].data; S.onboarding = res[20].data;
+    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data; S.tasks = res[15].data; S.activity = res[16].data; S.trust = res[17].data; S.retainers = res[18].data; S.commissioners = res[19].data; S.onboarding = res[20].data; S.catalog = res[21].data;
     S.me = S.staff.find(function (s) { return S.user && (s.email || '').toLowerCase() === (S.user.email || '').toLowerCase(); }) || {};
     return true;
   }
@@ -987,7 +988,9 @@ function renderNav(cur) {
       { k: 'vat_registered', label: 'Registered for VAT', type: 'checkbox' }, { k: 'vat_no', label: 'VAT number' }, { k: 'vat_rate', label: 'VAT rate %', type: 'number', step: 0.01 },
       { k: 'payment_terms_days', label: 'Payment terms (days)', type: 'number' }, { k: 'hourly_rate', label: 'Standard hourly rate (R)', type: 'number', step: 50 },
       { k: 'quote_prefix', label: 'Quote number prefix' }, { k: 'next_quote_no', label: 'Next quote number', type: 'number' },
-      { k: 'invoice_prefix', label: 'Invoice number prefix' }, { k: 'next_invoice_no', label: 'Next invoice number', type: 'number' }
+      { k: 'invoice_prefix', label: 'Invoice number prefix' }, { k: 'next_invoice_no', label: 'Next invoice number', type: 'number' },
+      { k: 'quote_notes', label: 'Default customer notes on quotes', type: 'textarea', full: true }, { k: 'quote_terms', label: 'Default terms & conditions on quotes', type: 'textarea', full: true },
+      { k: 'invoice_notes', label: 'Default customer notes on invoices', type: 'textarea', full: true }, { k: 'invoice_terms', label: 'Default terms & conditions on invoices', type: 'textarea', full: true }
     ]
   };
   V.settings = function () {
@@ -2044,7 +2047,7 @@ function renderNav(cur) {
     if (e.key === '/' && S.user && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && !$('mform')) { e.preventDefault(); openPalette(); }
     if (e.key === 'Escape' && $('pop')) closePop();
   });
-  document.addEventListener('click', function (e) { var b = e.target.closest('[data-go]'); if (b) { go(b.dataset.go); return; } if ($('pop') && !e.target.closest('#pop') && !e.target.closest('#bell,#btn-new,#avatar-btn,#me-card')) closePop(); });
+  document.addEventListener('click', function (e) { var b = e.target.closest('[data-go]'); if (b) { go(b.dataset.go); return; } if ($('pop') && !e.target.closest('#pop') && !e.target.closest('#bell,#btn-new,#avatar-btn,#me-card,.it-name')) closePop(); });
 
   /* =====================================================================
      PHASE 5: trust ledger, retainers, email attachments, hearing clock,
@@ -2694,6 +2697,562 @@ function renderNav(cur) {
     return _dash6().replace(/(<button data-dashtab="Report" class="(?:on)?">Report<\/button>)/, '$1<button data-dashtab="Profit" class="">Profit</button>');
   };
 
+  /* =====================================================================
+     PHASE 7: quotes, invoices and payments as full pages
+     (list → edit → save and send → convert → record payment → receipt)
+     ===================================================================== */
+  var TERMS = [['receipt', 'Due on receipt', 0], ['net7', 'Net 7', 7], ['net14', 'Net 14', 14], ['net15', 'Net 15', 15], ['net30', 'Net 30', 30], ['net45', 'Net 45', 45], ['net60', 'Net 60', 60], ['custom', 'Custom', null]];
+  var PAY_MODES = [['EFT', 'Bank transfer (EFT)'], ['Cash', 'Cash'], ['Card', 'Card'], ['Cheque', 'Cheque'], ['Payment link', 'Payment link'], ['Other', 'Other']];
+  function lineAmt(i) { var g = Number(i.qty || 0) * Number(i.unit_price || 0), d = Number(i.discount || 0); return round2(Math.max(0, i.discount_type === 'R' ? g - d : g * (1 - d / 100))); }
+  totals = function (items, vatRate) { var sub = round2(items.reduce(function (s, i) { return s + lineAmt(i); }, 0)); var vat = round2(sub * Number(vatRate || 0) / 100); return { sub: sub, vat: vat, total: round2(sub + vat) }; };
+  function termDays(k) { var t = TERMS.find(function (x) { return x[0] === k; }); return t ? t[2] : null; }
+  function quoteState(q) {
+    if (q.status === 'sent' && q.valid_until && daysLeft(q.valid_until) < 0) return { key: 'expired', label: 'Expired', cls: '' };
+    return { key: q.status, label: { draft: 'Draft', sent: 'Sent', accepted: 'Accepted', declined: 'Declined', invoiced: 'Invoiced' }[q.status] || q.status, cls: { draft: 'p-gold', sent: 'p-blue', accepted: 'p-green', declined: 'p-red', invoiced: 'p-green' }[q.status] || '' };
+  }
+  quotePill = function (s) { var q = typeof s === 'object' ? s : { status: s }; var x = quoteState(q); return pill(x.label, x.cls); };
+  function invLine(i) {
+    var s = invState(i);
+    if (s.key === 'paid') return ['Paid', 'var(--green)'];
+    if (s.key === 'cancelled') return ['Cancelled', 'var(--muted)'];
+    if (s.key === 'draft') return ['Draft', 'var(--muted)'];
+    var n = i.due_date ? daysLeft(i.due_date) : null;
+    if (n === null) return [s.key === 'part' ? 'Partially paid' : 'Sent', 'var(--accent)'];
+    if (n < 0) return ['Overdue by ' + Math.abs(n) + ' day' + (n === -1 ? '' : 's'), 'var(--red)'];
+    if (n === 0) return ['Due today', 'var(--amber)'];
+    return [(s.key === 'part' ? 'Part paid · ' : '') + 'Due in ' + n + ' day' + (n === 1 ? '' : 's'), 'var(--accent)'];
+  }
+  function clientEmail(cid) { var c = byId(S.clients, cid); return c && c.email ? c.email : ''; }
+  function nextNo(kind) { var st = S.settings || {}; return kind === 'quote' ? (st.quote_prefix || 'Q-') + String(st.next_quote_no || 1).padStart(4, '0') : (st.invoice_prefix || 'INV-') + String(st.next_invoice_no || 1).padStart(4, '0'); }
+
+  /* ----- Documents: quote / invoice, payment receipt, customer statement ----- */
+  function firmBlock() { var st = S.settings || {}; return [st.legal_name || st.trading_name, st.address1, st.address2, st.phone ? 'Calls ' + st.phone : '', st.whatsapp ? 'WhatsApp ' + st.whatsapp : '', st.email, st.reg_no ? 'Reg. no. ' + st.reg_no : '', st.vat_registered && st.vat_no ? 'VAT no. ' + st.vat_no : ''].filter(Boolean).map(esc).join('<br>'); }
+  function docShell(title, inner, ribbon) {
+    var st = S.settings || {};
+    return '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(title) + '</title><style>@media print{body{background:#fff!important}}</style></head><body style="margin:0;background:#f1f1f1">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f1f1"><tr><td align="center" style="padding:24px 12px">' +
+      '<table role="presentation" width="700" cellpadding="0" cellspacing="0" style="width:100%;max-width:700px;background:#fff;position:relative;overflow:hidden">' +
+      (ribbon ? '<tr><td style="height:0;padding:0;position:relative"><div style="position:absolute;top:22px;left:-46px;width:180px;transform:rotate(-45deg);background:' + ribbon[1] + ';color:#fff;text-align:center;font:bold 12px Arial,sans-serif;letter-spacing:2px;padding:5px 0">' + ribbon[0] + '</div></td></tr>' : '') +
+      '<tr><td height="8" style="height:8px;line-height:8px;font-size:0;background:#16203b;background-image:linear-gradient(90deg,#16203b 0%,#349cfc 35%,#d3a728 70%,#fd5d14 100%)">&nbsp;</td></tr>' +
+      '<tr><td style="padding:30px 36px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td valign="top"><img src="https://labourlawalliance.co.za/assets/images/logo.png?v=2" width="160" alt="' + esc(st.trading_name || 'Labour Law Alliance') + '" style="display:block;width:160px;height:auto;border:0"></td><td valign="top" align="right" style="font-family:Arial,sans-serif;font-size:12.5px;line-height:1.6;color:#444">' + firmBlock() + '</td></tr></table></td></tr>' +
+      inner +
+      '<tr><td style="padding:14px 36px;background:#16203b;font-family:Arial,sans-serif;font-size:12px;color:#c9cfdb">' + esc(st.document_footer || '') + '&nbsp;</td></tr></table></td></tr></table></body></html>';
+  }
+  docHtml = function (kind, d) {
+    var st = S.settings || {}, c = byId(S.clients, d.client_id) || {}, m = byId(S.matters, d.matter_id), isQ = kind === 'quote';
+    var items = itemsOf(kind, d.id), t = totals(items, d.vat_rate), paid = isQ ? 0 : invPaid(d), bal = round2(t.total - paid);
+    var hasDisc = items.some(function (i) { return Number(i.discount); });
+    var cell = 'padding:9px 6px;border-bottom:1px solid #e3e3e3;font-family:Arial,sans-serif;font-size:13.5px;color:#1d1d1d;vertical-align:top';
+    var th = cell + ';font-size:11px;letter-spacing:1px;color:#666;background:#f6f7f9';
+    var bank = st.bank_account ? 'Bank: ' + esc(st.bank_name || '') + ' · Account holder: ' + esc(st.bank_holder || st.trading_name || '') + '<br>Account no.: ' + esc(st.bank_account) + ' · Branch code: ' + esc(st.bank_branch || '') + (st.bank_type ? ' · ' + esc(st.bank_type) : '') : 'Banking details: please contact us.';
+    var s = isQ ? quoteState(d) : invState(d);
+    var ribbon = isQ ? (s.key === 'accepted' || s.key === 'invoiced' ? [s.label.toUpperCase(), '#2e7d32'] : s.key === 'declined' ? ['DECLINED', '#b3261e'] : null) : (s.key === 'paid' ? ['PAID', '#2e7d32'] : s.key === 'overdue' ? ['OVERDUE', '#b3261e'] : s.key === 'draft' ? ['DRAFT', '#8a8f99'] : null);
+    var meta = isQ ? [['Quote #', d.number], ['Quote date', fmt(d.issue_date)], d.valid_until ? ['Expiry date', fmt(d.valid_until)] : null, d.reference ? ['Reference #', d.reference] : null] : [['Invoice #', d.number], ['Invoice date', fmt(d.issue_date)], d.payment_terms ? ['Terms', (TERMS.find(function (x) { return x[0] === d.payment_terms; }) || [0, d.payment_terms])[1]] : null, d.due_date ? ['Due date', fmt(d.due_date)] : null, d.order_number ? ['Order number', d.order_number] : null];
+    if (m) meta.push(['Matter', m.ref]);
+    var inner = '<tr><td style="padding:26px 36px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="font-family:Arial,sans-serif;font-size:22px;font-weight:bold;letter-spacing:1px;color:#16203b">' + (isQ ? 'QUOTE' : (st.vat_registered ? 'TAX INVOICE' : 'INVOICE')) + '</td>' +
+      (isQ ? '' : '<td align="right" style="font-family:Arial,sans-serif;font-size:12px;color:#666">Balance due<br><b style="font-size:20px;color:#16203b">' + R2(bal) + '</b></td>') + '</tr></table></td></tr>' +
+      '<tr><td style="padding:18px 36px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family:Arial,sans-serif;font-size:13.5px;color:#1d1d1d"><tr>' +
+      '<td valign="top" width="55%"><span style="color:#666;font-size:12px">Bill to</span><br><b style="color:#1a5fb4">' + esc(c.name || '') + '</b>' + (c.contact_person ? '<br>Attention: ' + esc(c.contact_person) : '') + (c.address ? '<br>' + esc(c.address).replace(/\n/g, '<br>') : '') + (c.email ? '<br>' + esc(c.email) : '') + (c.id_or_reg_no ? '<br>' + esc(c.id_or_reg_no) : '') + '</td>' +
+      '<td valign="top" align="right"><table role="presentation" cellpadding="0" cellspacing="0" style="font-family:Arial,sans-serif;font-size:13px">' + meta.filter(Boolean).map(function (x) { return '<tr><td align="right" style="color:#666;padding:2px 12px 2px 0">' + x[0] + ' :</td><td align="right" style="padding:2px 0">' + esc(x[1]) + '</td></tr>'; }).join('') + '</table></td></tr></table></td></tr>' +
+      (d.subject ? '<tr><td style="padding:16px 36px 0;font-family:Arial,sans-serif;font-size:13.5px"><span style="color:#666">Subject :</span><br>' + esc(d.subject) + '</td></tr>' : '') +
+      '<tr><td style="padding:18px 36px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><th align="left" style="' + th + ';width:24px">#</th><th align="left" style="' + th + '">ITEM &amp; DESCRIPTION</th><th align="right" style="' + th + '">QTY</th><th align="right" style="' + th + '">RATE</th>' + (hasDisc ? '<th align="right" style="' + th + '">DISCOUNT</th>' : '') + '<th align="right" style="' + th + '">AMOUNT</th></tr>' +
+      items.map(function (i, n) { return '<tr><td style="' + cell + '">' + (n + 1) + '</td><td style="' + cell + '">' + esc(i.description) + (i.details ? '<div style="color:#666;font-size:12.5px;margin-top:3px;white-space:pre-wrap">' + esc(i.details) + '</div>' : '') + '</td><td align="right" style="' + cell + '">' + Number(i.qty) + '</td><td align="right" style="' + cell + ';white-space:nowrap">' + R2(i.unit_price) + '</td>' + (hasDisc ? '<td align="right" style="' + cell + ';white-space:nowrap">' + (Number(i.discount) ? (i.discount_type === 'R' ? R2(i.discount) : Number(i.discount) + '%') : '') + '</td>' : '') + '<td align="right" style="' + cell + ';white-space:nowrap">' + R2(lineAmt(i)) + '</td></tr>'; }).join('') + '</table></td></tr>' +
+      '<tr><td style="padding:8px 36px 0"><table role="presentation" align="right" cellpadding="0" cellspacing="0" style="font-family:Arial,sans-serif;font-size:13.5px;min-width:280px">' +
+      '<tr><td style="padding:6px 16px 6px 0;color:#444">Sub total</td><td align="right" style="padding:6px 0">' + R2(t.sub) + '</td></tr>' +
+      (Number(d.vat_rate) ? '<tr><td style="padding:6px 16px 6px 0;color:#444">VAT (' + Number(d.vat_rate) + '%)</td><td align="right" style="padding:6px 0">' + R2(t.vat) + '</td></tr>' : '') +
+      '<tr><td style="padding:8px 16px 8px 0;font-weight:bold;border-top:1px solid #ddd">Total' + (d.monthly ? ' per month' : '') + '</td><td align="right" style="padding:8px 0;font-weight:bold;border-top:1px solid #ddd">' + R2(t.total) + '</td></tr>' +
+      (!isQ && paid ? '<tr><td style="padding:6px 16px 6px 0;color:#444">Payment made</td><td align="right" style="padding:6px 0;color:#b3261e">(-) ' + R2(paid) + '</td></tr>' : '') +
+      (!isQ ? '<tr><td style="padding:8px 16px 8px 0;font-weight:bold;background:#f6f7f9">Balance due</td><td align="right" style="padding:8px 6px;font-weight:bold;background:#f6f7f9">' + R2(bal) + '</td></tr>' : '') + '</table></td></tr>' +
+      (d.notes ? '<tr><td style="padding:22px 36px 0;font-family:Arial,sans-serif;font-size:13px;color:#1d1d1d"><b>Notes</b><div style="white-space:pre-wrap;margin-top:4px">' + esc(d.notes) + '</div></td></tr>' : '') +
+      (d.terms ? '<tr><td style="padding:16px 36px 0;font-family:Arial,sans-serif;font-size:13px;color:#1d1d1d"><b>Terms &amp; Conditions</b><div style="white-space:pre-wrap;margin-top:4px;color:#444">' + esc(d.terms) + '</div></td></tr>' : '') +
+      '<tr><td style="padding:18px 36px 28px;font-family:Arial,sans-serif;font-size:12.5px;line-height:1.6;color:#444">' + (isQ ? 'To accept this quote, reply to the email it came with or call us on ' + esc(st.phone || '') + '.' : bank + '<br>Please use <b>' + esc(d.number) + '</b> as your payment reference.') + '</td></tr>';
+    return docShell(d.number, inner, ribbon);
+  };
+  function receiptHtml(p) {
+    var c = byId(S.clients, p.client_id) || {}, inv = byId(S.invoices, p.invoice_id);
+    var inner = '<tr><td style="padding:28px 36px 0;font-family:Arial,sans-serif;font-size:15px;letter-spacing:2px;text-align:center;color:#16203b;border-bottom:1px solid #eee;padding-bottom:16px">PAYMENT RECEIPT</td></tr>' +
+      '<tr><td style="padding:22px 36px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family:Arial,sans-serif;font-size:13.5px"><tr><td valign="top"><table role="presentation" cellpadding="0" cellspacing="0">' +
+      [['Payment date', fmt(p.received_on)], ['Payment #', String(p.number || '')], ['Reference number', p.reference || '—'], ['Payment mode', (PAY_MODES.find(function (x) { return x[0] === p.method; }) || [0, p.method])[1]]].map(function (x) { return '<tr><td style="color:#666;padding:6px 24px 6px 0;border-bottom:1px solid #eee">' + x[0] + '</td><td style="padding:6px 0;border-bottom:1px solid #eee"><b>' + esc(x[1]) + '</b></td></tr>'; }).join('') +
+      '</table></td><td valign="top" align="right"><div style="display:inline-block;background:#5c9a63;color:#fff;padding:22px 28px;text-align:center;font-family:Arial,sans-serif"><div style="font-size:12.5px">Amount received</div><div style="font-size:22px;font-weight:bold;margin-top:6px">' + R2(p.amount) + '</div></div></td></tr></table></td></tr>' +
+      '<tr><td style="padding:20px 36px 0;font-family:Arial,sans-serif;font-size:13.5px"><span style="color:#666">Received from</span><br><b style="color:#1a5fb4">' + esc(c.name || '') + '</b>' + (c.address ? '<br>' + esc(c.address) : '') + '</td></tr>' +
+      (inv ? '<tr><td style="padding:22px 36px 0"><div style="font-family:Arial,sans-serif;font-size:14px;font-weight:bold;margin-bottom:8px">Payment for</div><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family:Arial,sans-serif;font-size:13px"><tr style="background:#f6f7f9"><th align="left" style="padding:8px">Invoice number</th><th align="left" style="padding:8px">Invoice date</th><th align="right" style="padding:8px">Invoice amount</th><th align="right" style="padding:8px">Payment amount</th></tr><tr><td style="padding:8px;border-bottom:1px solid #eee">' + esc(inv.number) + '</td><td style="padding:8px;border-bottom:1px solid #eee">' + fmt(inv.issue_date) + '</td><td align="right" style="padding:8px;border-bottom:1px solid #eee">' + R2(invTotal(inv)) + '</td><td align="right" style="padding:8px;border-bottom:1px solid #eee">' + R2(p.amount) + '</td></tr></table></td></tr>' : '') +
+      (p.notes ? '<tr><td style="padding:16px 36px 0;font-family:Arial,sans-serif;font-size:13px;color:#444;white-space:pre-wrap">' + esc(p.notes) + '</td></tr>' : '') +
+      '<tr><td style="padding:24px 36px 28px;font-family:Arial,sans-serif;font-size:12.5px;color:#666">Thank you for your payment.</td></tr>';
+    return docShell('Payment ' + (p.number || ''), inner, ['PAID', '#2e7d32']);
+  }
+  function statementHtml(cid) {
+    var c = byId(S.clients, cid) || {}, rows = [];
+    S.invoices.filter(function (i) { return i.client_id === cid && i.status !== 'draft' && i.status !== 'cancelled'; }).forEach(function (i) { rows.push([i.issue_date, 'Invoice ' + i.number + (i.due_date ? ' · due ' + fmt(i.due_date) : ''), invTotal(i), 0]); });
+    S.payments.filter(function (p) { return p.client_id === cid && p.account === 'business'; }).forEach(function (p) { rows.push([p.received_on, 'Payment received' + (p.reference ? ' · ' + p.reference : ''), 0, Number(p.amount)]); });
+    rows.sort(function (a, b) { return a[0] < b[0] ? -1 : 1; });
+    var bal = 0, td = 'padding:7px 8px;border-bottom:1px solid #eee;font-family:Arial,sans-serif;font-size:13px';
+    var inner = '<tr><td style="padding:26px 36px 0;font-family:Arial,sans-serif"><b style="font-size:18px;color:#16203b">STATEMENT OF ACCOUNT</b><br><span style="color:#666;font-size:13px">' + esc(c.name || '') + ' · ' + fmt(today()) + '</span></td></tr>' +
+      '<tr><td style="padding:16px 36px 24px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr style="background:#f6f7f9"><th align="left" style="' + td + '">Date</th><th align="left" style="' + td + '">Transaction</th><th align="right" style="' + td + '">Amount</th><th align="right" style="' + td + '">Payment</th><th align="right" style="' + td + '">Balance</th></tr>' +
+      rows.map(function (r) { bal = round2(bal + r[2] - r[3]); return '<tr><td style="' + td + '">' + fmt(r[0]) + '</td><td style="' + td + '">' + esc(r[1]) + '</td><td align="right" style="' + td + '">' + (r[2] ? R2(r[2]) : '') + '</td><td align="right" style="' + td + '">' + (r[3] ? R2(r[3]) : '') + '</td><td align="right" style="' + td + '">' + R2(bal) + '</td></tr>'; }).join('') +
+      '<tr><td colspan="4" align="right" style="' + td + ';font-weight:bold">Balance due</td><td align="right" style="' + td + ';font-weight:bold">' + R2(bal) + '</td></tr></table></td></tr>';
+    return docShell('Statement ' + (c.name || ''), inner);
+  }
+
+  /* ----- PDF in the browser (attached to emails) ----- */
+  function loadScript(src) { return new Promise(function (ok, bad) { var s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = function () { bad(new Error('Could not load the PDF maker. Check your internet connection.')); }; document.head.appendChild(s); }); }
+  function loadPdfLib() {
+    if (window.html2canvas && window.jspdf) return Promise.resolve();
+    if (!S.pdfLoading) S.pdfLoading = Promise.all([window.html2canvas ? 0 : loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'), window.jspdf ? 0 : loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')]).catch(function (e) { S.pdfLoading = null; throw e; });
+    return S.pdfLoading;
+  }
+  // Renders the document in its own frame (so the CRM's styles never touch it) and cuts it into A4 pages.
+  async function makePdf(html, filename) {
+    await loadPdfLib();
+    var f = document.createElement('iframe');
+    f.setAttribute('aria-hidden', 'true'); f.style.cssText = 'position:fixed;left:-10000px;top:0;width:760px;height:1200px;border:0;visibility:hidden';
+    f.srcdoc = html.replace(/https:\/\/labourlawalliance\.co\.za\/assets\//g, location.origin + '/assets/').replace(/#f1f1f1/g, '#ffffff').replace('padding:24px 12px', 'padding:0');
+    document.body.appendChild(f);
+    try {
+      await new Promise(function (r) { f.onload = r; setTimeout(r, 8000); });
+      var d = f.contentDocument;
+      await Promise.all(Array.prototype.map.call(d.images, function (im) { return im.complete ? 0 : new Promise(function (r) { im.onload = im.onerror = r; }); }));
+      d.body.style.background = '#ffffff';
+      var fullH = Math.ceil(d.body.firstElementChild ? d.body.firstElementChild.getBoundingClientRect().height : d.documentElement.scrollHeight);
+      f.style.height = fullH + 'px';
+      var canvas = await window.html2canvas(d.body, { scale: 2, useCORS: true, backgroundColor: '#ffffff', windowWidth: 760, width: 760, height: fullH, windowHeight: fullH });
+      var pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+      var pw = 210, ph = 297, m = 6, w = pw - 2 * m, pageH = ph - 2 * m;
+      var pxPerMm = canvas.width / w, slice = Math.floor(pageH * pxPerMm);
+      for (var y = 0, page = 0; y < canvas.height; y += slice, page++) {
+        var h = Math.min(slice, canvas.height - y), c = document.createElement('canvas'); c.width = canvas.width; c.height = h;
+        var ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, h); ctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
+        if (page) pdf.addPage();
+        pdf.addImage(c.toDataURL('image/jpeg', 0.9), 'JPEG', m, m, w, h / pxPerMm);
+      }
+      return { filename: filename, content: pdf.output('datauristring').split(',')[1] };
+    } finally { f.remove(); }
+  }
+  async function sendMail(o) {
+    var s = await sb.auth.getSession(); var token = s.data.session && s.data.session.access_token;
+    var r = await fetch('/api/send-document', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(o) });
+    var j = await r.json().catch(function () { return {}; });
+    return r.ok ? null : (j.error || 'The email could not be sent.');
+  }
+  function mailHtml(title, message, summary) {
+    var st = S.settings || {};
+    var paras = String(message || '').split(/\n{2,}/).map(function (p) { return '<p style="margin:0 0 14px">' + esc(p).replace(/\n/g, '<br>') + '</p>'; }).join('');
+    return '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f1f1f1"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f1f1"><tr><td align="center" style="padding:24px 12px"><table role="presentation" width="620" cellpadding="0" cellspacing="0" style="width:100%;max-width:620px;background:#fff">' +
+      '<tr><td style="padding:22px 32px 10px"><img src="https://labourlawalliance.co.za/assets/images/logo.png?v=2" width="140" alt="' + esc(st.trading_name || 'Labour Law Alliance') + '" style="display:block;border:0"></td></tr>' +
+      '<tr><td style="background:#16203b;color:#fff;text-align:center;font:20px Arial,sans-serif;padding:26px 20px">' + esc(title) + '</td></tr>' +
+      '<tr><td style="padding:26px 40px 6px;font:15px/1.6 Arial,sans-serif;color:#1d1d1d">' + paras + '</td></tr>' +
+      (summary ? '<tr><td style="padding:0 40px 26px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fefbe8;border:1px solid #f1e7b4"><tr><td style="padding:18px;text-align:center;font:14px Arial,sans-serif;color:#1d1d1d">' + summary + '</td></tr></table></td></tr>' : '') +
+      '<tr><td style="padding:14px 32px;background:#16203b;font:12px Arial,sans-serif;color:#c9cfdb">' + esc([st.trading_name, st.phone, st.email].filter(Boolean).join(' · ')) + '</td></tr></table></td></tr></table></body></html>';
+  }
+
+  /* ----- Lists ----- */
+  var _quotesBase = V.quotes;
+  function stateText(label, color) { return '<span style="font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:' + color + '">' + esc(label) + '</span>'; }
+  function qColor(k) { return { draft: 'var(--muted)', sent: 'var(--accent)', accepted: 'var(--green)', invoiced: 'var(--green)', declined: 'var(--red)', expired: 'var(--amber)' }[k] || 'var(--muted)'; }
+  function iColor(k) { return { draft: 'var(--muted)', sent: 'var(--accent)', part: 'var(--amber)', overdue: 'var(--red)', paid: 'var(--green)', cancelled: 'var(--muted)' }[k] || 'var(--muted)'; }
+  function listBar(kind) {
+    var f = S.ui[kind + 'Filter'] || 'all', q = S.ui[kind + 'Q'] || '';
+    var opts = kind === 'quote' ? [['all', 'All quotes'], ['draft', 'Draft'], ['sent', 'Sent'], ['accepted', 'Accepted'], ['invoiced', 'Invoiced'], ['declined', 'Declined'], ['expired', 'Expired']] : [['all', 'All invoices'], ['draft', 'Draft'], ['unpaid', 'Unpaid'], ['overdue', 'Overdue'], ['part', 'Partially paid'], ['paid', 'Paid'], ['cancelled', 'Cancelled']];
+    return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><select data-lfilter="' + kind + '" style="max-width:200px">' + opts.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === f ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select><input type="search" data-lsearch="' + kind + '" placeholder="Search number, customer or reference" value="' + esc(q) + '" style="max-width:320px"><span style="flex:1"></span><button class="btn pri" data-act="new-' + kind + '">+ New</button></div>';
+  }
+  function filtered(kind) {
+    var f = S.ui[kind + 'Filter'] || 'all', q = (S.ui[kind + 'Q'] || '').toLowerCase();
+    var arr = kind === 'quote' ? S.quotes : S.invoices;
+    return arr.filter(function (d) {
+      var k = kind === 'quote' ? quoteState(d).key : invState(d).key;
+      if (f !== 'all') { if (kind === 'invoice' && f === 'unpaid') { if (['sent', 'part', 'overdue'].indexOf(k) < 0) return false; } else if (k !== f) return false; }
+      if (q) { var hay = (d.number + ' ' + clientName(d.client_id) + ' ' + (d.reference || '') + ' ' + (d.order_number || '') + ' ' + (d.subject || '')).toLowerCase(); if (hay.indexOf(q) < 0) return false; }
+      return true;
+    }).sort(function (a, b) { return (a.issue_date || '') < (b.issue_date || '') ? 1 : (a.issue_date || '') > (b.issue_date || '') ? -1 : (a.number < b.number ? 1 : -1); });
+  }
+  function quoteList() {
+    var rows = filtered('quote');
+    return listBar('quote') + '<div class="panel"><div class="tbl"><table><tr><th>Date</th><th>Quote #</th><th>Reference #</th><th>Customer name</th><th>Status</th><th style="text-align:right">Amount</th></tr>' +
+      (rows.map(function (q) { var s = quoteState(q); return '<tr class="click" data-go="#quote=' + q.id + '"><td class="mono">' + fmt(q.issue_date) + '</td><td><a href="#quote=' + q.id + '" class="mono" style="color:var(--accent)">' + esc(q.number) + '</a></td><td>' + esc(q.reference || '') + '</td><td>' + esc(clientName(q.client_id)) + '</td><td>' + stateText(s.label, qColor(s.key)) + '</td><td class="mono" style="text-align:right">' + R2(totals(itemsOf('quote', q.id), q.vat_rate).total) + '</td></tr>'; }).join('') || '<tr><td colspan="6">' + empty('No quotes here yet.') + '</td></tr>') + '</table></div></div>';
+  }
+  function invoiceList() {
+    var rows = filtered('invoice'), open = S.invoices.filter(function (i) { return ['sent', 'part', 'overdue'].indexOf(invState(i).key) >= 0; });
+    var sum = function (a) { return a.reduce(function (s, i) { return s + invState(i).bal; }, 0); };
+    var dueIn = function (lo, hi) { return sum(open.filter(function (i) { var n = i.due_date ? daysLeft(i.due_date) : 0; return n >= lo && n <= hi; })); };
+    return '<div class="grid g4"><div class="panel stat"><b>' + R2(sum(open)) + '</b><span>Total outstanding</span></div><div class="panel stat"><b>' + R2(dueIn(0, 0)) + '</b><span>Due today</span></div><div class="panel stat"><b>' + R2(dueIn(1, 30)) + '</b><span>Due within 30 days</span></div><div class="panel stat"><b style="color:var(--red)">' + R2(sum(open.filter(function (i) { return invState(i).key === 'overdue'; }))) + '</b><span>Overdue</span></div></div>' +
+      listBar('invoice') + '<div class="panel"><div class="tbl"><table><tr><th>Date</th><th>Invoice #</th><th>Order number</th><th>Customer name</th><th>Status</th><th>Due date</th><th style="text-align:right">Amount</th><th style="text-align:right">Balance due</th></tr>' +
+      (rows.map(function (i) { var s = invState(i), l = invLine(i); return '<tr class="click" data-go="#invoice=' + i.id + '"><td class="mono">' + fmt(i.issue_date) + '</td><td><a href="#invoice=' + i.id + '" class="mono" style="color:var(--accent)">' + esc(i.number) + '</a></td><td>' + esc(i.order_number || '') + '</td><td>' + esc(clientName(i.client_id)) + '</td><td>' + stateText(l[0], l[1]) + '</td><td class="mono">' + fmt(i.due_date) + '</td><td class="mono" style="text-align:right">' + R2(invTotal(i)) + '</td><td class="mono" style="text-align:right">' + R2(s.key === 'cancelled' ? 0 : s.bal) + '</td></tr>'; }).join('') || '<tr><td colspan="8">' + empty('No invoices here yet.') + '</td></tr>') + '</table></div></div>';
+  }
+  function itemsTab() {
+    return '<div class="panel"><div class="hd"><h2>Items</h2><button class="btn pri" data-act="new-item">+ New item</button></div><p class="sub" style="margin:0 0 10px">Services and fees you pick from when adding lines to a quote or invoice. The rate fills in automatically and can still be changed on each document.</p><div class="tbl"><table><tr><th>Name</th><th>Description</th><th style="text-align:right">Rate</th><th>Unit</th><th>Status</th></tr>' +
+      (S.catalog.slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; }).map(function (it) { return '<tr class="click" data-act="open-item" data-id="' + it.id + '"><td><b>' + esc(it.name) + '</b></td><td class="meta">' + esc(it.description || '') + '</td><td class="mono" style="text-align:right">' + R2(it.rate) + '</td><td>' + esc(it.unit || '') + '</td><td>' + (it.active ? pill('Active', 'p-green') : pill('Inactive', '')) + '</td></tr>'; }).join('') || '<tr><td colspan="5">' + empty('No items yet.') + '</td></tr>') + '</table></div></div>';
+  }
+  V.quotes = function () {
+    var tab = S.ui.qTab || 'Invoices';
+    if (tab === 'Retainers' || tab === 'Unbilled time') return _quotesBase();
+    var tabs = '<div class="subtabs">' + ['Invoices', 'Quotes', 'Retainers', 'Unbilled time', 'Items'].map(function (x) { return '<button data-qtab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    var warn = (S.settings && !S.settings.bank_account) ? '<div class="callout p-amber">Your bank details are not set, so invoices say “please contact us” instead. <a href="#settings">Add them in Company settings</a>.</div>' : '';
+    return head('Sales', 'Quotes and invoices', 'Create a quote, send it, turn it into an invoice, then record the payment. Everything uses your firm and banking details from Company settings.', '<button class="btn pri" data-act="new-invoice">New invoice</button><button class="btn" data-act="new-quote">New quote</button>') + warn + tabs + (tab === 'Quotes' ? quoteList() : tab === 'Items' ? itemsTab() : invoiceList());
+  };
+  var _qb = _quotesBase;
+  _quotesBase = function () { return _qb().replace("['Invoices', 'Quotes', 'Retainers', 'Unbilled time']", '').replace('<button data-qtab="Unbilled time" class="on">Unbilled time</button>', '<button data-qtab="Unbilled time" class="on">Unbilled time</button><button data-qtab="Items" class="">Items</button>').replace('<button data-qtab="Unbilled time" class="">Unbilled time</button>', '<button data-qtab="Unbilled time" class="">Unbilled time</button><button data-qtab="Items" class="">Items</button>'); };
+  document.addEventListener('change', function (e) { var k = e.target.dataset && e.target.dataset.lfilter; if (!k) return; S.ui[k + 'Filter'] = e.target.value; render(); });
+  document.addEventListener('input', function (e) { var k = e.target.dataset && e.target.dataset.lsearch; if (!k) return; S.ui[k + 'Q'] = e.target.value; clearTimeout(S.lsT); S.lsT = setTimeout(function () { render(); var n = document.querySelector('[data-lsearch="' + k + '"]'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 250); });
+
+  /* ----- Item catalogue ----- */
+  function editItem(it, after) {
+    var isNew = !it || !it.id;
+    openForm({
+      title: isNew ? 'New item' : it.name,
+      fields: [{ k: 'name', label: 'Name', req: true }, { k: 'rate', label: 'Rate (R)', type: 'number', step: 0.01 }, { k: 'unit', label: 'Unit', ph: 'e.g. hour, day' }, { k: 'active', label: 'Active', type: 'checkbox' }, { k: 'description', label: 'Description (shown under the item on documents)', type: 'textarea', full: true }],
+      values: it || { active: true, rate: (S.settings && S.settings.hourly_rate) || 0 },
+      save: async function (d) { d.rate = d.rate || 0; var r = isNew ? await sb.from('catalog_items').insert(d).select().single() : await sb.from('catalog_items').update(d).eq('id', it.id).select().single(); if (r.error) return dbErr(r); upsertLocal(S.catalog, r.data); toast(isNew ? 'Item added' : 'Item saved'); if (after) setTimeout(function () { after(r.data); }, 60); else render(); },
+      del: isNew ? null : async function () { var r = await sb.from('catalog_items').delete().eq('id', it.id); if (r.error) return dbErr(r); S.catalog = S.catalog.filter(function (x) { return x.id !== it.id; }); toast('Item deleted'); render(); }
+    });
+  }
+  P2['new-item'] = function () { editItem(null); };
+  P2['open-item'] = function (el) { editItem(byId(S.catalog, el.dataset.id)); };
+
+  /* ----- Edit page: #quote-edit=new|id, #invoice-edit=new|id ----- */
+  function blankLine() { return { item_id: null, description: '', details: '', qty: 1, unit_price: '', discount: 0, discount_type: '%' }; }
+  function startDraft(kind, id) {
+    var st = S.settings || {}, p = S.docPreset || {}, d = id ? byId(kind === 'quote' ? S.quotes : S.invoices, id) : null;
+    var lines = d ? itemsOf(kind, d.id).map(function (i) { return { item_id: i.item_id || null, description: i.description, details: i.details || '', qty: i.qty, unit_price: i.unit_price, discount: i.discount || 0, discount_type: i.discount_type || '%' }; }) : (p._items || []).map(function (i) { return Object.assign(blankLine(), i); });
+    if (!lines.length) lines = [blankLine()];
+    var cid = d ? d.client_id : (p.client_id || '');
+    var c = byId(S.clients, cid) || {};
+    var dr = d ? Object.assign({}, d) : { client_id: cid, matter_id: p.matter_id || '', issue_date: ymd(today()), status: 'draft', vat_rate: st.vat_registered ? (st.vat_rate || 15) : 0, notes: p.notes || (kind === 'quote' ? st.quote_notes : st.invoice_notes) || '', terms: p.terms || (kind === 'quote' ? st.quote_terms : st.invoice_terms) || '', attorney_email: p.attorney_email || (S.me && S.me.email) || '', subject: p.subject || '' };
+    if (!d) {
+      if (kind === 'quote') dr.valid_until = ymd(addDays(today(), 30));
+      else { dr.payment_terms = c.payment_terms || p.payment_terms || 'net' + (st.payment_terms_days || 14); if (!termDays(dr.payment_terms) && dr.payment_terms !== 'receipt') dr.payment_terms = 'net14'; dr.due_date = ymd(addDays(today(), termDays(dr.payment_terms) || 0)); }
+      if (p.reference) dr.reference = p.reference;
+      if (p.order_number) dr.order_number = p.order_number;
+    }
+    S.draft = { kind: kind, id: id || null, doc: dr, lines: lines, files: [], preset: d ? null : p, key: location.hash };
+    S.docPreset = null;
+  }
+  function matterOptions(cid, sel) { return '<option value="">Not linked</option>' + S.matters.filter(function (m) { return !cid || m.client_id === cid; }).map(function (m) { return '<option value="' + m.id + '"' + (m.id === sel ? ' selected' : '') + '>' + esc(m.ref + ' · ' + m.title) + '</option>'; }).join(''); }
+  function custBox(dr) {
+    var c = byId(S.clients, dr.client_id);
+    return '<div class="combo" id="cust-combo"><button type="button" class="combo-btn" data-act="cust-open">' + (c ? '<span class="avatar sm">' + esc((c.name || '?')[0].toUpperCase()) + '</span><span style="flex:1;text-align:left"><b>' + esc(c.name) + '</b>' + (c.email ? ' <span class="meta">' + esc(c.email) + '</span>' : '') + '</span>' : '<span class="meta" style="flex:1;text-align:left">Select or add a customer</span>') + '<span aria-hidden="true">▾</span></button></div>' +
+      (c ? '<div class="meta" style="margin-top:8px;display:flex;gap:24px;flex-wrap:wrap"><span><b style="color:var(--ink)">Billing address</b><br>' + (c.address ? esc(c.address).replace(/\n/g, '<br>') : '<a href="#" data-act="edit-client" data-id="' + c.id + '">Add address</a>') + '</span>' + (c.contact_person ? '<span><b style="color:var(--ink)">Attention</b><br>' + esc(c.contact_person) + '</span>' : '') + '</div>' : '');
+  }
+  function lineRows() {
+    var dr = S.draft;
+    return dr.lines.map(function (l, i) {
+      return '<tr class="dl" data-i="' + i + '"><td><div class="combo"><input type="text" class="it-name" data-l="description" value="' + esc(l.description) + '" placeholder="Type or click to select an item" autocomplete="off"></div><textarea class="it-det" data-l="details" placeholder="Description (optional)" rows="' + Math.max(1, Math.min(6, (l.details || '').split('\n').length)) + '">' + esc(l.details || '') + '</textarea></td>' +
+        '<td><input type="number" data-l="qty" step="0.25" min="0" value="' + esc(l.qty) + '"></td><td><input type="number" data-l="unit_price" step="0.01" min="0" value="' + esc(l.unit_price) + '"></td>' +
+        '<td><div style="display:flex;gap:4px"><input type="number" data-l="discount" step="0.01" min="0" value="' + esc(l.discount || 0) + '" style="min-width:0"><select data-l="discount_type" style="width:56px;padding-left:6px">' + ['%', 'R'].map(function (x) { return '<option' + (x === l.discount_type ? ' selected' : '') + '>' + x + '</option>'; }).join('') + '</select></div></td>' +
+        '<td class="mono l-amt" style="text-align:right;padding-top:14px">' + R2(lineAmt(l)) + '</td><td><button type="button" class="btn sm" data-act="dl-del" data-i="' + i + '" aria-label="Remove line" title="Remove line">×</button></td></tr>';
+    }).join('');
+  }
+  function totalsBox() {
+    var dr = S.draft, t = totals(dr.lines, dr.doc.vat_rate), qty = dr.lines.reduce(function (s, l) { return s + Number(l.qty || 0); }, 0);
+    return '<div class="row"><div class="grow">Sub total</div><b class="mono">' + R2(t.sub) + '</b></div>' +
+      '<div class="row" style="align-items:center"><div class="grow">VAT <input type="number" data-f="vat_rate" step="0.01" min="0" value="' + esc(dr.doc.vat_rate || 0) + '" style="width:70px;display:inline-block;margin-left:6px"> %</div><span class="mono">' + R2(t.vat) + '</span></div>' +
+      '<div class="row" style="border-top:1px solid var(--line-2);padding-top:12px"><div class="grow"><b style="font-size:16px">Total ( R )</b></div><b class="mono" style="font-size:18px">' + R2(t.total) + '</b></div>' +
+      '<span id="dt-foot" hidden>' + R2(t.total) + '|' + qty + '</span>';
+  }
+  function editPage(kind, id) {
+    if (!S.draft || S.draft.key !== location.hash) startDraft(kind, id);
+    var dr = S.draft, d = dr.doc, isQ = kind === 'quote', st = S.settings || {};
+    if (id && !byId(isQ ? S.quotes : S.invoices, id)) return empty('Not found. <a href="#quotes">Back to quotes and invoices</a>');
+    var fld = function (label, input, req) { return '<div class="de-row"><label' + (req ? ' class="req"' : '') + '>' + label + '</label><div>' + input + '</div></div>'; };
+    var inp = function (k, type, extra) { return '<input type="' + (type || 'text') + '" data-f="' + k + '" value="' + esc(d[k] == null ? '' : d[k]) + '"' + (extra || '') + '>'; };
+    var recips = d.client_id && clientEmail(d.client_id) ? '<label class="check" style="font-weight:400"><input type="checkbox" checked disabled> ' + esc(clientName(d.client_id)) + ' &lt;' + esc(clientEmail(d.client_id)) + '&gt;</label>' : '<span class="meta">Choose a customer with an email address to send this.</span>';
+    var files = S.docs.filter(function (x) { return id && (isQ ? x.quote_id === id : x.invoice_id === id); });
+    return '<div class="de" id="doc-edit">' +
+      '<div class="de-head"><h1>' + (id ? 'Edit ' + (isQ ? 'quote ' : 'invoice ') + esc(d.number) : (isQ ? 'New quote' : 'New invoice')) + '</h1><a href="' + (id ? '#' + kind + '=' + id : '#quotes') + '" class="btn sm" aria-label="Close">✕</a></div>' +
+      '<div class="panel de-sec">' + fld('Customer name', custBox(d), true) + '</div>' +
+      '<div class="panel de-sec">' +
+      fld(isQ ? 'Quote #' : 'Invoice #', '<input type="text" value="' + esc(id ? d.number : nextNo(kind)) + '" disabled title="Numbers are given automatically"><span class="meta">' + (id ? '' : 'Given automatically when you save') + '</span>', true) +
+      (isQ ? fld('Reference #', inp('reference', 'text', ' maxlength="80"')) : fld('Order number', inp('order_number', 'text', ' maxlength="80"'))) +
+      '<div class="de-row"><label class="req">' + (isQ ? 'Quote date' : 'Invoice date') + '</label><div class="de-inline">' + inp('issue_date', 'date') +
+      (isQ ? '<span class="lbl2">Expiry date</span>' + inp('valid_until', 'date') : '<span class="lbl2">Terms</span><select data-f="payment_terms">' + TERMS.map(function (t) { return '<option value="' + t[0] + '"' + (t[0] === d.payment_terms ? ' selected' : '') + '>' + t[1] + '</option>'; }).join('') + '</select><span class="lbl2">Due date</span>' + inp('due_date', 'date')) + '</div></div>' +
+      fld('Attorney', '<select data-f="attorney_email"><option value="">Not assigned</option>' + S.staff.filter(function (s) { return s.active; }).map(function (s) { return '<option value="' + esc(s.email) + '"' + (s.email === d.attorney_email ? ' selected' : '') + '>' + esc(s.full_name || s.email) + '</option>'; }).join('') + '</select>') +
+      fld('Matter', '<select data-f="matter_id" id="de-matter">' + matterOptions(d.client_id, d.matter_id) + '</select>') +
+      fld('Subject', '<textarea data-f="subject" rows="2" maxlength="250" placeholder="Let your customer know what this ' + (isQ ? 'quote' : 'invoice') + ' is for">' + esc(d.subject || '') + '</textarea>') +
+      (isQ ? fld('', '<label class="check" style="font-weight:400"><input type="checkbox" data-f="monthly"' + (d.monthly ? ' checked' : '') + '> This is a monthly fee (retainer)</label>') : '') +
+      '</div>' +
+      '<div class="panel de-sec"><div class="hd"><h2>Item table</h2><button type="button" class="btn sm" data-act="dl-bulk">Add items in bulk</button></div><div class="tbl"><table class="de-lines"><thead><tr><th>Item details</th><th style="width:100px">Quantity</th><th style="width:130px">Rate</th><th style="width:150px">Discount</th><th style="width:130px;text-align:right">Amount</th><th style="width:44px"></th></tr></thead><tbody id="de-lines">' + lineRows() + '</tbody></table></div>' +
+      '<div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="btn sm" data-act="dl-add">+ Add new row</button></div>' +
+      '<div class="grid g2" style="margin-top:16px;align-items:start"><div><label class="lbl" for="de-notes">Customer notes</label><textarea id="de-notes" data-f="notes" rows="3">' + esc(d.notes || '') + '</textarea><div class="meta">Shown on the ' + (isQ ? 'quote' : 'invoice') + '.</div></div><div class="panel de-totals" id="de-totals" style="margin:0">' + totalsBox() + '</div></div></div>' +
+      '<div class="panel de-sec"><div class="grid g2" style="align-items:start"><div><label class="lbl" for="de-terms">Terms &amp; conditions</label><textarea id="de-terms" data-f="terms" rows="5" placeholder="Enter the terms and conditions of your business">' + esc(d.terms || '') + '</textarea></div>' +
+      '<div><span class="lbl">Attach files to ' + (isQ ? 'quote' : 'invoice') + '</span><div style="margin-top:6px"><label class="btn sm" style="cursor:pointer">Upload file<input type="file" id="de-files" multiple hidden></label></div><div class="meta" style="margin-top:6px">Up to 5 files, 10 MB each. They are saved in the Document centre.</div><div id="de-filelist" style="margin-top:6px">' + files.map(function (x) { return '<div class="meta">📎 ' + esc(x.name) + '</div>'; }).join('') + dr.files.map(function (f) { return '<div class="meta">📎 ' + esc(f.name) + ' (will upload when you save)</div>'; }).join('') + '</div></div></div>' +
+      '<div style="margin-top:14px"><span class="lbl">Email communications</span><div style="margin-top:6px">' + recips + '</div></div></div>' +
+      '<div class="de-foot"><button type="button" class="btn" data-act="de-save" data-mode="draft">Save as draft</button><button type="button" class="btn pri" data-act="de-save" data-mode="send">Save and send</button><a class="btn" href="' + (id ? '#' + kind + '=' + id : '#quotes') + '">Cancel</a><span style="flex:1"></span><span class="meta" id="de-foot-sum"></span></div>' +
+      '</div>';
+  }
+  function syncFoot() { var f = $('dt-foot'), o = $('de-foot-sum'); if (f && o) { var p = f.textContent.split('|'); o.innerHTML = 'Total amount: <b>' + p[0] + '</b> · Total quantity: ' + p[1]; } }
+  function refreshLines() { var tb = $('de-lines'); if (tb) tb.innerHTML = lineRows(); refreshTotals(); }
+  function refreshTotals() { var b = $('de-totals'); if (b) b.innerHTML = totalsBox(); syncFoot(); }
+  document.addEventListener('input', function (e) {
+    if (!S.draft || !e.target.closest || !e.target.closest('#doc-edit')) return;
+    var t = e.target, dr = S.draft;
+    if (t.dataset.f) {
+      var k = t.dataset.f; dr.doc[k] = t.type === 'checkbox' ? t.checked : t.value;
+      if (k === 'vat_rate') { var tb = $('de-totals'); var v = t.value; refreshTotals(); var n = document.querySelector('[data-f="vat_rate"]'); if (n && document.activeElement !== n) { n.focus(); n.value = v; } return; }
+      if (k === 'payment_terms') { var days = termDays(t.value); if (days !== null) { dr.doc.due_date = ymd(addDays(D(dr.doc.issue_date || ymd(today())), days)); var dd = document.querySelector('[data-f="due_date"]'); if (dd) dd.value = dr.doc.due_date; } }
+      if (k === 'issue_date' && dr.kind === 'invoice') { var dd2 = termDays(dr.doc.payment_terms); if (dd2 !== null && t.value) { dr.doc.due_date = ymd(addDays(D(t.value), dd2)); var x = document.querySelector('[data-f="due_date"]'); if (x) x.value = dr.doc.due_date; } }
+      if (k === 'due_date' && dr.kind === 'invoice') { dr.doc.payment_terms = 'custom'; var ts = document.querySelector('[data-f="payment_terms"]'); if (ts) ts.value = 'custom'; }
+      return;
+    }
+    if (t.dataset.l) {
+      var row = t.closest('tr.dl'), i = Number(row.dataset.i), l = dr.lines[i]; if (!l) return;
+      l[t.dataset.l] = t.value;
+      if (t.dataset.l === 'description') { l.item_id = null; itemMenu(t, i); }
+      if (t.dataset.l === 'details') t.rows = Math.max(1, Math.min(6, t.value.split('\n').length));
+      row.querySelector('.l-amt').textContent = R2(lineAmt(l)); refreshTotals();
+    }
+  });
+  document.addEventListener('change', function (e) { if (S.draft && e.target.closest && e.target.closest('#doc-edit') && e.target.tagName === 'SELECT') e.target.dispatchEvent(new Event('input', { bubbles: true })); });
+  document.addEventListener('focusin', function (e) { if (S.draft && e.target.classList && e.target.classList.contains('it-name')) itemMenu(e.target, Number(e.target.closest('tr.dl').dataset.i)); });
+  function itemMenu(input, i) {
+    var q = input.value.trim().toLowerCase(), list = S.catalog.filter(function (it) { return it.active && (!q || it.name.toLowerCase().indexOf(q) >= 0 || (it.description || '').toLowerCase().indexOf(q) >= 0); }).slice(0, 8);
+    var html = '<div class="menu-list">' + list.map(function (it) { return '<button type="button" class="hit" data-act="dl-pick" data-i="' + i + '" data-id="' + it.id + '"><span style="flex:1;min-width:0;text-align:left"><b style="display:block">' + esc(it.name) + '</b><span class="meta">Rate: ' + R2(it.rate) + (it.unit ? ' per ' + esc(it.unit) : '') + '</span></span></button>'; }).join('') + (list.length ? '' : '<div class="meta" style="padding:8px 12px">No saved item matches. Keep typing to use it as a one-off line.</div>') + '<hr><button type="button" class="hit" data-act="dl-newitem" data-i="' + i + '"><span class="ic">' + icon('plus', 16) + '</span><b>Add new item</b></button></div>';
+    var p = popover(html, input, 'menu'); p.dataset.kind = 'items'; p.style.minWidth = Math.max(300, input.offsetWidth) + 'px';
+  }
+  P2['dl-pick'] = function (el) { var it = byId(S.catalog, el.dataset.id), l = S.draft.lines[Number(el.dataset.i)]; if (!it || !l) return; l.item_id = it.id; l.description = it.name; l.details = it.description || ''; l.unit_price = it.rate; closePop(); refreshLines(); };
+  P2['dl-newitem'] = function (el) { var i = Number(el.dataset.i), l = S.draft.lines[i]; closePop(); editItem({ name: l.description, rate: l.unit_price || ((S.settings && S.settings.hourly_rate) || 0), active: true, description: l.details }, function (it) { l.item_id = it.id; l.description = it.name; l.details = it.description || ''; l.unit_price = it.rate; refreshLines(); }); var t = document.querySelector('.modal h2'); if (t) t.textContent = 'New item'; };
+  P2['dl-add'] = function () { S.draft.lines.push(blankLine()); refreshLines(); var r = document.querySelectorAll('#de-lines .it-name'); if (r.length) r[r.length - 1].focus(); };
+  P2['dl-del'] = function (el) { S.draft.lines.splice(Number(el.dataset.i), 1); if (!S.draft.lines.length) S.draft.lines.push(blankLine()); refreshLines(); };
+  P2['dl-bulk'] = function () {
+    var items = S.catalog.filter(function (x) { return x.active; });
+    openForm({ title: 'Add items in bulk', saveLabel: 'Add items', fields: [], extra: '<div class="fld full">' + (items.map(function (it) { return '<label class="check" style="font-weight:400;justify-content:space-between"><span><input type="checkbox" class="bulk-it" data-id="' + it.id + '"> ' + esc(it.name) + '</span><span class="meta">' + R2(it.rate) + '</span></label>'; }).join('') || '<p class="meta">No saved items yet.</p>') + '</div>',
+      save: function () { var picked = Array.prototype.filter.call(document.querySelectorAll('.bulk-it'), function (c) { return c.checked; }).map(function (c) { return byId(S.catalog, c.dataset.id); }); if (!picked.length) return 'Tick at least one item.'; var dr = S.draft; dr.lines = dr.lines.filter(function (l) { return l.description; }); picked.forEach(function (it) { dr.lines.push(Object.assign(blankLine(), { item_id: it.id, description: it.name, details: it.description || '', unit_price: it.rate })); }); setTimeout(refreshLines, 30); } });
+  };
+  P2['cust-open'] = function (el) {
+    var html = '<div style="padding:8px"><input type="search" id="cust-q" placeholder="Search" autocomplete="off"></div><div class="menu-list" id="cust-list"></div><hr><button type="button" class="hit" data-act="cust-new"><span class="ic">' + icon('plus', 16) + '</span><b>New customer</b></button>';
+    var p = popover(html, el, 'menu'); p.dataset.kind = 'cust'; p.style.minWidth = el.offsetWidth + 'px';
+    var draw = function () { var q = ($('cust-q').value || '').toLowerCase(); $('cust-list').innerHTML = S.clients.filter(function (c) { return !c.anonymised_at && (!q || (c.name + ' ' + (c.email || '') + ' ' + (c.contact_person || '')).toLowerCase().indexOf(q) >= 0); }).slice(0, 30).map(function (c) { return '<button type="button" class="hit" data-act="cust-pick" data-id="' + c.id + '"><span class="avatar sm">' + esc((c.name || '?')[0].toUpperCase()) + '</span><span style="flex:1;min-width:0;text-align:left"><b style="display:block">' + esc(c.name) + '</b><span class="meta">' + esc([c.email, c.contact_person].filter(Boolean).join(' · ')) + '</span></span></button>'; }).join('') || '<div class="meta" style="padding:8px 12px">No match.</div>'; };
+    draw(); $('cust-q').addEventListener('input', draw); setTimeout(function () { $('cust-q').focus(); }, 30);
+  };
+  function pickCustomer(cid) {
+    var dr = S.draft, c = byId(S.clients, cid); dr.doc.client_id = cid;
+    if (dr.doc.matter_id && (byId(S.matters, dr.doc.matter_id) || {}).client_id !== cid) dr.doc.matter_id = '';
+    if (!dr.doc.matter_id) { var m = S.matters.find(function (x) { return x.client_id === cid && x.stage !== 'Closed'; }); if (m) dr.doc.matter_id = m.id; }
+    if (dr.kind === 'invoice' && c && c.payment_terms && !dr.id) { dr.doc.payment_terms = c.payment_terms; var n = termDays(c.payment_terms); if (n !== null) dr.doc.due_date = ymd(addDays(D(dr.doc.issue_date), n)); }
+    closePop(); render();
+  }
+  P2['cust-pick'] = function (el) { pickCustomer(el.dataset.id); };
+  P2['cust-new'] = function () {
+    closePop();
+    openForm({
+      title: 'New customer', saveLabel: 'Save',
+      fields: [{ k: 'kind', label: 'Customer type', type: 'select', options: [['employer', 'Business'], ['individual', 'Individual'], ['union', 'Trade union']] }, { k: 'name', label: 'Display name', req: true, hint: 'The name on quotes and invoices.' }, { k: 'contact_person', label: 'Primary contact' }, { k: 'email', label: 'Email address', type: 'email' }, { k: 'phone', label: 'Phone', type: 'tel' }, { k: 'id_or_reg_no', label: 'ID or registration number' }, { k: 'payment_terms', label: 'Payment terms', type: 'select', options: TERMS.filter(function (t) { return t[0] !== 'custom'; }).map(function (t) { return [t[0], t[1]]; }) }, { k: 'address', label: 'Billing address', type: 'textarea', full: true }],
+      values: { kind: 'employer', payment_terms: 'net' + ((S.settings && S.settings.payment_terms_days) || 14) },
+      save: async function (d) { d.fica_status = 'outstanding'; d.popia_consent = false; var r = await sb.from('clients').insert(d).select().single(); if (r.error) return dbErr(r); S.clients.push(r.data); S.clients.sort(function (a, b) { return a.name < b.name ? -1 : 1; }); toast('Customer added'); setTimeout(function () { pickCustomer(r.data.id); }, 60); }
+    });
+  };
+  document.addEventListener('change', function (e) {
+    if (e.target.id !== 'de-files' || !S.draft) return;
+    var add = Array.prototype.slice.call(e.target.files); var bad = add.find(function (f) { return f.size > 10485760; }); if (bad) { toast(bad.name + ' is larger than 10 MB.'); return; }
+    S.draft.files = S.draft.files.concat(add).slice(0, 5); var l = $('de-filelist'); if (l) l.insertAdjacentHTML('beforeend', add.map(function (f) { return '<div class="meta">📎 ' + esc(f.name) + ' (will upload when you save)</div>'; }).join(''));
+  });
+  P2['de-save'] = async function (el) {
+    var dr = S.draft, kind = dr.kind, isQ = kind === 'quote', tbl = isQ ? 'quotes' : 'invoices', d = dr.doc, mode = el.dataset.mode;
+    var lines = dr.lines.filter(function (l) { return String(l.description || '').trim(); }).map(function (l, i) { return { item_id: l.item_id || null, description: String(l.description).trim().slice(0, 500), details: (l.details || '').trim() || null, qty: Number(l.qty || 0), unit_price: Number(l.unit_price || 0), discount: Number(l.discount || 0), discount_type: l.discount_type === 'R' ? 'R' : '%', sort: i }; });
+    if (!d.client_id) { toast('Choose a customer.'); return; }
+    if (!lines.length) { toast('Add at least one item.'); return; }
+    if (!d.issue_date) { toast('Add the ' + (isQ ? 'quote' : 'invoice') + ' date.'); return; }
+    if (mode === 'send' && !clientEmail(d.client_id)) { toast('This customer has no email address. Add one, or save as draft.'); return; }
+    document.querySelectorAll('[data-act="de-save"]').forEach(function (b) { b.disabled = true; });
+    var done = function () { document.querySelectorAll('[data-act="de-save"]').forEach(function (b) { b.disabled = false; }); };
+    var row = { client_id: d.client_id, matter_id: d.matter_id || null, issue_date: d.issue_date, vat_rate: Number(d.vat_rate || 0), notes: d.notes || null, terms: d.terms || null, subject: d.subject || null, attorney_email: d.attorney_email || null };
+    if (isQ) { row.valid_until = d.valid_until || null; row.reference = d.reference || null; row.monthly = !!d.monthly; } else { row.due_date = d.due_date || null; row.order_number = d.order_number || null; row.payment_terms = d.payment_terms || null; }
+    var r, p = dr.preset || {};
+    if (!dr.id) {
+      var num = await sb.rpc('next_doc_number', { kind: kind }); if (num.error) { done(); toast(num.error.message); return; }
+      row.number = num.data; row.status = 'draft';
+      if (p.lead_id) row.lead_id = p.lead_id;
+      if (!isQ && p.quote_id) row.quote_id = p.quote_id;
+      r = await sb.from(tbl).insert(row).select().single();
+    } else r = await sb.from(tbl).update(row).eq('id', dr.id).select().single();
+    if (r.error) { done(); toast(r.error.message); return; }
+    upsertLocal(S[tbl], r.data);
+    var le = await saveLines(kind, r.data.id, lines); if (le) { done(); toast(le); return; }
+    if (!dr.id && !isQ && p._timeIds && p._timeIds.length) { var tr = await sb.from('time_entries').update({ invoice_id: r.data.id }).in('id', p._timeIds).select(); if (!tr.error) tr.data.forEach(function (x) { upsertLocal(S.time, x); }); }
+    if (!dr.id && !isQ && p.quote_id) { var qr = await sb.from('quotes').update({ status: 'invoiced' }).eq('id', p.quote_id).select().single(); if (!qr.error) upsertLocal(S.quotes, qr.data); }
+    if (!dr.id && isQ && p.lead_id) { var lr = await sb.from('leads').update({ status: 'quote_sent', est_value: totals(lines, row.vat_rate).total }).eq('id', p.lead_id).select().single(); if (!lr.error) upsertLocal(S.leads, lr.data); }
+    for (var i = 0; i < dr.files.length; i++) {
+      var f = dr.files[i], path = 'Correspondence/' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + i) + '-' + f.name.replace(/[^\w.\- ]+/g, '_').slice(-100);
+      var up = await sb.storage.from('documents').upload(path, f, { contentType: f.type || 'application/octet-stream', upsert: false });
+      if (!up.error) { var dd = { folder: 'Correspondence', name: f.name, storage_path: path, mime: f.type || null, size_bytes: f.size, client_id: d.client_id, matter_id: d.matter_id || null }; dd[isQ ? 'quote_id' : 'invoice_id'] = r.data.id; var di = await sb.from('documents').insert(dd).select().single(); if (!di.error) S.docs.unshift(di.data); }
+    }
+    var st = S.settings; if (!dr.id && st) { if (isQ) st.next_quote_no = (st.next_quote_no || 1) + 1; else st.next_invoice_no = (st.next_invoice_no || 1) + 1; }
+    S.draft = null; done();
+    toast((isQ ? 'The quote ' : 'The invoice ') + r.data.number + ' has been ' + (dr.id ? 'saved' : 'created') + '.');
+    location.hash = mode === 'send' ? 'send=' + kind + ':' + r.data.id : kind + '=' + r.data.id;
+  };
+
+  /* ----- Send email page: #send=quote:id | invoice:id | receipt:id ----- */
+  function sendInfo(kind, id) {
+    var st = S.settings || {}, firm = st.trading_name || 'Labour Law Alliance';
+    if (kind === 'receipt') { var p = byId(S.payments, id); if (!p) return null; var c = byId(S.clients, p.client_id) || {}, inv = byId(S.invoices, p.invoice_id); return { rec: p, client: c, title: 'Payment Received', subject: 'Payment received by ' + firm, msg: 'Dear ' + (c.contact_person || c.name || 'Sir/Madam') + ',\n\nThank you for your payment. It was a pleasure doing business with you. We look forward to working together again!\n\nKind regards,\n' + firm, summary: 'Payment amount<br><b style="font-size:20px">' + R2(p.amount) + '</b><br><span style="color:#666">Received ' + fmt(p.received_on) + (inv ? ' · Invoice ' + esc(inv.number) : '') + '</span>', pdf: function () { return makePdf(receiptHtml(p), 'Payment-' + (p.number || '') + '.pdf'); }, label: 'Attach payment receipt PDF', back: '#receipt=' + id }; }
+    var isQ = kind === 'quote', d = byId(isQ ? S.quotes : S.invoices, id); if (!d) return null;
+    var c2 = byId(S.clients, d.client_id) || {}, t = totals(itemsOf(kind, d.id), d.vat_rate), name = c2.contact_person || c2.name || 'Sir/Madam';
+    return isQ ? { rec: d, client: c2, title: 'Quote #' + d.number, subject: 'Quote - ' + d.number + ' is awaiting your approval', msg: 'Dear ' + name + ',\n\nThank you for contacting us. Your quote is attached as a PDF. Please let us know if you would like to go ahead, or if you have any questions.\n\nKind regards,\n' + firm, summary: 'Quote amount<br><b style="font-size:20px">' + R2(t.total) + '</b>' + (d.valid_until ? '<br><span style="color:#666">Valid until ' + fmt(d.valid_until) + '</span>' : ''), pdf: function () { return makePdf(docHtml('quote', d), d.number + '.pdf'); }, label: 'Attach quote PDF', back: '#quote=' + id }
+      : { rec: d, client: c2, title: 'Invoice #' + d.number, subject: 'Invoice - ' + d.number + ' from ' + firm, msg: 'Dear ' + name + ',\n\nThank you for your business. Your invoice is attached as a PDF. Please pay by the due date using the banking details on the invoice, with ' + d.number + ' as the payment reference.\n\nKind regards,\n' + firm, summary: 'Invoice amount<br><b style="font-size:20px">' + R2(invState(d).bal === undefined ? t.total : invState(d).bal) + '</b>' + (d.due_date ? '<br><span style="color:#666">Due ' + fmt(d.due_date) + '</span>' : ''), pdf: function () { return makePdf(docHtml('invoice', d), d.number + '.pdf'); }, statement: function () { return makePdf(statementHtml(d.client_id), 'Statement-' + (c2.name || '').replace(/[^\w]+/g, '-') + '.pdf'); }, label: 'Attach invoice PDF', back: '#invoice=' + id };
+  }
+  function sendPage(kind, id) {
+    var x = sendInfo(kind, id); if (!x) return empty('Not found. <a href="#quotes">Back</a>');
+    var st = S.settings || {};
+    S.sendKey = location.hash;
+    return '<div class="de"><div class="de-head"><h1>Email to ' + esc(x.client.name || '') + '</h1><a href="' + x.back + '" class="btn sm" aria-label="Close">✕</a></div>' +
+      '<div class="panel de-sec"><div class="de-row"><label>From</label><div class="meta" style="padding-top:8px">' + esc((st.trading_name || 'Labour Law Alliance') + ' <' + (st.email || 'info@labourlawalliance.co.za') + '>') + '</div></div>' +
+      '<div class="de-row"><label for="em-to">Send to</label><div><input id="em-to" type="text" value="' + esc(x.client.email || '') + '" placeholder="name@example.com, another@example.com"></div></div>' +
+      '<div class="de-row"><label for="em-cc">Cc</label><div><input id="em-cc" type="text" value="' + esc(S.user ? S.user.email : '') + '"></div></div>' +
+      '<div class="de-row"><label for="em-subject">Subject</label><div><input id="em-subject" type="text" value="' + esc(x.subject) + '" maxlength="200"></div></div></div>' +
+      '<div class="panel de-sec" style="padding:0;overflow:hidden"><div class="em-prev"><div class="em-logo"><img src="/assets/images/logo.png?v=2" alt="" width="130"></div><div class="em-band">' + esc(x.title) + '</div><div class="em-body"><textarea id="em-msg" rows="9">' + esc(x.msg) + '</textarea><div class="em-sum">' + x.summary + '</div></div></div></div>' +
+      '<div class="panel de-sec"><label class="check" style="font-weight:400"><input type="checkbox" id="em-pdf" checked> ' + x.label + '</label>' + (x.statement ? '<label class="check" style="font-weight:400"><input type="checkbox" id="em-stmt"> Attach customer statement</label>' : '') + '<p class="meta" style="margin:6px 0 0">The office also gets a copy of every email. Replies come to your info@ mailbox.</p></div>' +
+      '<div class="de-foot"><button class="btn pri" data-act="em-send" data-kind="' + kind + '" data-id="' + id + '">Send</button><a class="btn" href="' + x.back + '">Cancel</a><span class="msg" id="em-msg-out" style="margin-left:8px"></span></div></div>';
+  }
+  P2['em-send'] = async function (el) {
+    var kind = el.dataset.kind, id = el.dataset.id, x = sendInfo(kind, id); if (!x) return;
+    var out = $('em-msg-out'); el.disabled = true; out.className = 'msg'; out.textContent = 'Preparing…';
+    try {
+      var att = [];
+      if ($('em-pdf').checked) { out.textContent = 'Making the PDF…'; att.push(await x.pdf()); }
+      if ($('em-stmt') && $('em-stmt').checked) att.push(await x.statement());
+      out.textContent = 'Sending…';
+      var err = await sendMail({ to: $('em-to').value, cc: $('em-cc').value, subject: $('em-subject').value.trim(), html: mailHtml(x.title, $('em-msg').value, x.summary), text: $('em-msg').value, attachments: att });
+      if (err) { out.textContent = err; el.disabled = false; return; }
+    } catch (er) { out.textContent = er.message || 'Could not send.'; el.disabled = false; return; }
+    var now = new Date().toISOString(), r;
+    if (kind === 'quote') { r = await sb.from('quotes').update({ status: x.rec.status === 'draft' ? 'sent' : x.rec.status, sent_at: now }).eq('id', id).select().single(); if (!r.error) upsertLocal(S.quotes, r.data); }
+    if (kind === 'invoice') { r = await sb.from('invoices').update({ status: x.rec.status === 'draft' ? 'sent' : x.rec.status, sent_at: now }).eq('id', id).select().single(); if (!r.error) upsertLocal(S.invoices, r.data); }
+    if (kind === 'receipt') { r = await sb.from('payments').update({ thanks_sent_at: now }).eq('id', id).select().single(); if (!r.error) upsertLocal(S.payments, r.data); }
+    toast(kind === 'quote' ? 'Your quote has been sent.' : kind === 'invoice' ? 'Your invoice has been sent.' : 'The payment receipt has been sent.');
+    location.hash = x.back.slice(1);
+  };
+
+  /* ----- View pages (split list + document) ----- */
+  function sideList(kind, sel) {
+    var arr = kind === 'quote' ? filtered('quote') : kind === 'invoice' ? filtered('invoice') : S.payments.filter(function (p) { return p.account === 'business'; }).slice().sort(function (a, b) { return a.received_on < b.received_on ? 1 : -1; });
+    var head2 = { quote: 'All quotes', invoice: 'All invoices', receipt: 'Payments received' }[kind];
+    return '<aside class="slist panel"><div class="slist-h"><b>' + head2 + '</b>' + (kind === 'receipt' ? '' : '<button class="btn sm pri" data-act="new-' + kind + '" aria-label="New">+</button>') + '</div><div class="slist-b">' +
+      arr.map(function (d) {
+        if (kind === 'receipt') return '<a href="#receipt=' + d.id + '" class="si' + (d.id === sel ? ' on' : '') + '"><div class="si-t"><b>' + esc(clientName(d.client_id)) + '</b><span class="mono">' + R2(d.amount) + '</span></div><div class="meta">' + (d.number || '') + ' · ' + fmt(d.received_on) + '</div><div style="font-size:11.5px;font-weight:700;color:var(--green)">PAID · ' + esc((PAY_MODES.find(function (x) { return x[0] === d.method; }) || [0, d.method])[1]) + '</div></a>';
+        var l = kind === 'quote' ? (function () { var s = quoteState(d); return [s.label, qColor(s.key)]; })() : invLine(d);
+        var amt = kind === 'quote' ? totals(itemsOf('quote', d.id), d.vat_rate).total : invTotal(d);
+        return '<a href="#' + kind + '=' + d.id + '" class="si' + (d.id === sel ? ' on' : '') + '"><div class="si-t"><b>' + esc(clientName(d.client_id)) + '</b><span class="mono">' + R2(amt) + '</span></div><div class="meta">' + esc(d.number) + ' · ' + fmt(d.issue_date) + '</div><div style="font-size:11.5px;font-weight:700;text-transform:uppercase;color:' + l[1] + '">' + esc(l[0]) + '</div></a>';
+      }).join('') + '</div></aside>';
+  }
+  function frame(html) { return '<iframe class="docframe" title="Document preview" sandbox="allow-same-origin" srcdoc="' + esc(html) + '"></iframe>'; }
+  function viewPage(kind, id) {
+    var isQ = kind === 'quote', d = byId(isQ ? S.quotes : S.invoices, id);
+    if (!d) return empty('Not found. <a href="#quotes">Back to quotes and invoices</a>');
+    var s = isQ ? quoteState(d) : invState(d), pays = isQ ? [] : S.payments.filter(function (p) { return p.invoice_id === id; });
+    var files = S.docs.filter(function (x) { return isQ ? x.quote_id === id : x.invoice_id === id; }), inv = isQ ? S.invoices.find(function (i) { return i.quote_id === id; }) : null, fromQ = !isQ && d.quote_id ? byId(S.quotes, d.quote_id) : null;
+    var tools = '<button class="btn sm" data-go="#' + kind + '-edit=' + id + '">Edit</button><button class="btn sm" data-go="#send=' + kind + ':' + id + '">Send email</button><button class="btn sm" data-act="doc-print" data-kind="' + kind + '" data-id="' + id + '">PDF / Print</button><button class="btn sm" data-act="doc-pdf" data-kind="' + kind + '" data-id="' + id + '">Download PDF</button>' +
+      (isQ ? (s.key !== 'invoiced' ? '<button class="btn sm pri" data-act="quote-to-invoice" data-id="' + id + '">Convert to invoice</button>' : '') : (['sent', 'part', 'overdue', 'draft'].indexOf(s.key) >= 0 ? '<button class="btn sm pri" data-go="#pay=' + id + '">Record payment</button>' : '')) +
+      '<button class="btn sm" data-act="doc-more" data-kind="' + kind + '" data-id="' + id + '" aria-label="More">⋯</button>';
+    return '<div class="split">' + sideList(kind, id) + '<section class="sdoc"><div class="panel sdoc-h"><div><div class="meta">' + (isQ ? 'Quote' : 'Invoice') + '</div><h1 style="margin:0">' + esc(d.number) + '</h1></div><div class="sdoc-tools">' + tools + '</div></div>' +
+      (s.key === 'draft' ? '<div class="callout">This ' + (isQ ? 'quote' : 'invoice') + ' is a draft. <a href="#send=' + kind + ':' + id + '">Send it</a>' + (isQ ? '' : ' or <a href="#" data-act="mark-sent" data-id="' + id + '">mark it as sent</a>') + '.</div>' : '') +
+      (inv ? '<div class="callout p-blue">Converted to invoice <a href="#invoice=' + inv.id + '">' + esc(inv.number) + '</a>.</div>' : '') + (fromQ ? '<div class="callout p-blue">Made from quote <a href="#quote=' + fromQ.id + '">' + esc(fromQ.number) + '</a>.</div>' : '') +
+      '<div class="panel" style="padding:0;overflow:hidden">' + frame(docHtml(kind, d)) + '</div>' +
+      (!isQ ? '<div class="panel"><div class="hd"><h2>Payments received</h2>' + (s.key !== 'paid' && s.key !== 'cancelled' ? '<button class="btn sm" data-go="#pay=' + id + '">Record payment</button>' : '') + '</div>' + (pays.length ? '<div class="tbl"><table><tr><th>Date</th><th>Payment #</th><th>Reference</th><th>Mode</th><th style="text-align:right">Amount</th></tr>' + pays.map(function (p) { return '<tr class="click" data-go="#receipt=' + p.id + '"><td class="mono">' + fmt(p.received_on) + '</td><td class="mono">' + (p.number || '') + '</td><td>' + esc(p.reference || '') + '</td><td>' + esc(p.method) + '</td><td class="mono" style="text-align:right">' + R2(p.amount) + '</td></tr>'; }).join('') + '</table></div>' : '<p class="meta" style="margin:0">No payments yet.</p>') + '</div>' : '') +
+      '<div class="panel"><div class="hd"><h2>More information</h2></div><dl class="kv"><dt>Email recipients</dt><dd>' + esc(clientEmail(d.client_id) || '—') + '</dd>' + (d.sent_at ? '<dt>Last sent</dt><dd>' + fmtDT(d.sent_at) + '</dd>' : '') + (d.attorney_email ? '<dt>Attorney</dt><dd>' + esc(d.attorney_email) + '</dd>' : '') + (d.matter_id && byId(S.matters, d.matter_id) ? '<dt>Matter</dt><dd><a href="#matter=' + d.matter_id + '">' + esc(byId(S.matters, d.matter_id).ref) + '</a></dd>' : '') + (files.length ? '<dt>Attachments</dt><dd>' + files.map(function (f) { return '<a href="#" data-act="doc-open" data-id="' + f.id + '">' + esc(f.name) + '</a>'; }).join('<br>') + '</dd>' : '') + '</dl></div>' +
+      '</section></div>';
+  }
+  P2['doc-pdf'] = async function (el) {
+    var k = el.dataset.kind, d = k === 'receipt' ? byId(S.payments, el.dataset.id) : byId(k === 'quote' ? S.quotes : S.invoices, el.dataset.id); el.disabled = true;
+    try { var f = await makePdf(k === 'receipt' ? receiptHtml(d) : docHtml(k, d), (k === 'receipt' ? 'Payment-' + d.number : d.number) + '.pdf'); var a = document.createElement('a'); a.href = 'data:application/pdf;base64,' + f.content; a.download = f.filename; document.body.appendChild(a); a.click(); a.remove(); }
+    catch (er) { toast(er.message || 'Could not make the PDF.'); }
+    el.disabled = false;
+  };
+  P2['doc-print'] = function (el) { var k = el.dataset.kind; if (k === 'receipt') return printHtml(receiptHtml(byId(S.payments, el.dataset.id))); printHtml(docHtml(k, byId(S[k === 'quote' ? 'quotes' : 'invoices'], el.dataset.id))); };
+  P2['doc-more'] = function (el) {
+    var k = el.dataset.kind, id = el.dataset.id, d = byId(k === 'quote' ? S.quotes : S.invoices, id);
+    var items = menuItem('doc', 'Clone', 'data-act="doc-clone" data-kind="' + k + '" data-id="' + id + '"');
+    if (k === 'quote') items += (d.status !== 'accepted' && d.status !== 'invoiced' ? menuItem('check', 'Mark as accepted', 'data-act="quote-mark" data-s="accepted" data-id="' + id + '"') : '') + (d.status !== 'declined' && d.status !== 'invoiced' ? menuItem('out', 'Mark as declined', 'data-act="quote-mark" data-s="declined" data-id="' + id + '"') : '');
+    else items += (d.status === 'draft' ? menuItem('check', 'Mark as sent', 'data-act="mark-sent" data-id="' + id + '"') : '') + (d.status !== 'cancelled' && invPaid(d) === 0 ? menuItem('out', 'Void (cancel)', 'data-act="inv-void" data-id="' + id + '"') : '');
+    items += '<hr>' + menuItem('out', 'Delete', 'data-act="doc-delete" data-kind="' + k + '" data-id="' + id + '"');
+    var p = popover(items, el, 'menu'); p.dataset.kind = 'more';
+  };
+  P2['quote-mark'] = async function (el) { var r = await sb.from('quotes').update({ status: el.dataset.s }).eq('id', el.dataset.id).select().single(); if (r.error) { toast(r.error.message); return; } upsertLocal(S.quotes, r.data); toast('Quote marked as ' + el.dataset.s); render(); };
+  P2['mark-sent'] = async function (el) { var r = await sb.from('invoices').update({ status: 'sent' }).eq('id', el.dataset.id).select().single(); if (r.error) { toast(r.error.message); return; } upsertLocal(S.invoices, r.data); toast('Marked as sent'); render(); };
+  P2['inv-void'] = async function (el) { if (!confirm('Void this invoice? It stays on record as cancelled.')) return; var r = await sb.from('invoices').update({ status: 'cancelled' }).eq('id', el.dataset.id).select().single(); if (r.error) { toast(r.error.message); return; } upsertLocal(S.invoices, r.data); toast('Invoice voided'); render(); };
+  P2['doc-delete'] = async function (el) {
+    var k = el.dataset.kind, tbl = k === 'quote' ? 'quotes' : 'invoices', d = byId(S[tbl], el.dataset.id);
+    if (k === 'invoice' && invPaid(d) > 0) { toast('Payments are recorded against this invoice. Void it instead.'); return; }
+    if (!confirm('Delete ' + d.number + '? This cannot be undone.')) return;
+    var r = await sb.from(tbl).delete().eq('id', d.id); if (r.error) { toast(r.error.message); return; }
+    S[tbl] = S[tbl].filter(function (x) { return x.id !== d.id; }); S.items = S.items.filter(function (i) { return i[k + '_id'] !== d.id; }); toast(d.number + ' deleted'); location.hash = 'quotes';
+  };
+  P2['doc-clone'] = function (el) { var k = el.dataset.kind, d = byId(k === 'quote' ? S.quotes : S.invoices, el.dataset.id); S.docPreset = { client_id: d.client_id, matter_id: d.matter_id, notes: d.notes, terms: d.terms, subject: d.subject, _items: itemsOf(k, d.id).map(function (i) { return { item_id: i.item_id, description: i.description, details: i.details, qty: i.qty, unit_price: i.unit_price, discount: i.discount, discount_type: i.discount_type }; }) }; S.draft = null; location.hash = k + '-edit=new'; };
+
+  /* ----- Record payment: #pay=invoiceId ----- */
+  function payPage(id) {
+    var inv = byId(S.invoices, id); if (!inv) return empty('Invoice not found.');
+    var s = invState(inv), c = byId(S.clients, inv.client_id) || {}, nextP = S.payments.reduce(function (m, p) { return Math.max(m, p.number || 0); }, 0) + 1;
+    var row = function (label, input, req) { return '<div class="de-row"><label' + (req ? ' class="req"' : '') + '>' + label + '</label><div>' + input + '</div></div>'; };
+    return '<div class="split">' + sideList('invoice', id) + '<section class="sdoc"><div class="panel sdoc-h"><h1 style="margin:0">Payment for ' + esc(inv.number) + '</h1><a href="#invoice=' + id + '" class="btn sm" aria-label="Close">✕</a></div>' +
+      '<form class="panel de-sec" id="pay-form" onsubmit="return false">' +
+      row('Customer name', '<input type="text" value="' + esc(c.name || '') + '" disabled>', true) +
+      row('Payment #', '<input type="text" value="' + nextP + '" disabled title="Numbered automatically">', true) +
+      '<div class="de-row"><label class="req" for="pf-amount">Amount received (R)</label><div class="de-inline"><input type="number" id="pf-amount" step="0.01" min="0" value="' + (s.bal > 0 ? s.bal.toFixed(2) : '') + '"><span class="lbl2">Bank charges (if any)</span><input type="number" id="pf-charges" step="0.01" min="0" value=""></div></div>' +
+      '<div class="de-row"><label class="req" for="pf-date">Payment date</label><div class="de-inline"><input type="date" id="pf-date" value="' + ymd(today()) + '"><span class="lbl2">Payment mode</span><select id="pf-mode">' + PAY_MODES.map(function (m) { return '<option value="' + m[0] + '">' + m[1] + '</option>'; }).join('') + '</select></div></div>' +
+      '<div class="de-row"><label for="pf-ref">Reference #</label><div class="de-inline"><input type="text" id="pf-ref" maxlength="120" placeholder="e.g. the bank reference"><span class="lbl2">Deposit to</span><select id="pf-acc"><option value="business">Business account</option></select></div></div>' +
+      row('Notes', '<textarea id="pf-notes" rows="2"></textarea>') +
+      '<div class="meta" style="margin:4px 0 12px">Balance due on ' + esc(inv.number) + ': <b>' + R2(s.bal) + '</b>. Money held for a client goes through Payments → Trust ledger instead.</div>' +
+      (c.email ? '<label class="check" style="font-weight:400"><input type="checkbox" id="pf-thanks" checked> Send a “thank you” note for this payment</label><label class="check" style="font-weight:400;margin-left:26px"><input type="checkbox" checked disabled> ' + esc(c.email) + '</label>' : '<p class="meta">Add an email address to the customer to send a thank-you note with the receipt.</p>') +
+      '</form><div class="de-foot"><button class="btn pri" data-act="pay-save" data-id="' + id + '">Save as paid</button><a class="btn" href="#invoice=' + id + '">Cancel</a><span class="msg" id="pf-msg" style="margin-left:8px"></span></div></section></div>';
+  }
+  P2['pay-save'] = async function (el) {
+    var inv = byId(S.invoices, el.dataset.id), s = invState(inv), amt = Number($('pf-amount').value), msg = $('pf-msg');
+    if (!(amt > 0)) { msg.textContent = 'Enter the amount received.'; return; }
+    if (amt > s.bal + 0.009 && !confirm('That is more than the balance due (' + R2(s.bal) + '). Record it anyway?')) return;
+    if (!$('pf-date').value) { msg.textContent = 'Add the payment date.'; return; }
+    el.disabled = true; msg.className = 'msg'; msg.textContent = 'Saving…';
+    var row = { client_id: inv.client_id, invoice_id: inv.id, matter_id: inv.matter_id || null, amount: amt, bank_charges: Number($('pf-charges').value || 0), received_on: $('pf-date').value, method: $('pf-mode').value, account: 'business', reference: $('pf-ref').value.trim() || null, notes: $('pf-notes').value.trim() || null };
+    var r = await sb.from('payments').insert(row).select().single();
+    if (r.error) { el.disabled = false; msg.textContent = r.error.message; return; }
+    S.payments.unshift(r.data);
+    if (inv.status === 'draft') { var u = await sb.from('invoices').update({ status: 'sent' }).eq('id', inv.id).select().single(); if (!u.error) upsertLocal(S.invoices, u.data); }
+    var c = byId(S.clients, inv.client_id) || {};
+    if ($('pf-thanks') && $('pf-thanks').checked && c.email) {
+      msg.textContent = 'Sending the thank-you note…';
+      try {
+        var x = sendInfo('receipt', r.data.id), pdf = await x.pdf();
+        var err = await sendMail({ to: c.email, subject: x.subject, html: mailHtml(x.title, x.msg, x.summary), text: x.msg, attachments: [pdf] });
+        if (!err) { var t = await sb.from('payments').update({ thanks_sent_at: new Date().toISOString() }).eq('id', r.data.id).select().single(); if (!t.error) upsertLocal(S.payments, t.data); }
+        else toast('Payment saved, but the thank-you note was not sent: ' + err);
+      } catch (er) { toast('Payment saved, but the thank-you note was not sent.'); }
+    }
+    toast('The payment from the customer has been recorded.');
+    location.hash = 'invoice=' + inv.id;
+  };
+
+  /* ----- Payment receipt: #receipt=paymentId ----- */
+  function receiptPage(id) {
+    var p = byId(S.payments, id); if (!p) return empty('Payment not found. <a href="#payments">Payments</a>');
+    var inv = byId(S.invoices, p.invoice_id);
+    return '<div class="split">' + sideList('receipt', id) + '<section class="sdoc"><div class="panel sdoc-h"><div><div class="meta">Payment received</div><h1 style="margin:0">' + (p.number || '') + '</h1></div><div class="sdoc-tools"><button class="btn sm" data-act="rc-edit" data-id="' + id + '">Edit</button><button class="btn sm" data-go="#send=receipt:' + id + '">Send email</button><button class="btn sm" data-act="doc-print" data-kind="receipt" data-id="' + id + '">PDF / Print</button><button class="btn sm" data-act="doc-pdf" data-kind="receipt" data-id="' + id + '">Download PDF</button>' + (inv ? '<a class="btn sm" href="#invoice=' + inv.id + '">Invoice ' + esc(inv.number) + '</a>' : '') + '</div></div>' +
+      (p.thanks_sent_at ? '<div class="callout p-green">Thank-you note and receipt sent ' + fmtDT(p.thanks_sent_at) + '.</div>' : '') +
+      '<div class="panel" style="padding:0;overflow:hidden">' + frame(receiptHtml(p)) + '</div></section></div>';
+  }
+  P2['rc-edit'] = function (el) { editPayment(byId(S.payments, el.dataset.id)); };
+
+  /* ----- Routing for the new pages ----- */
+  function salesRoute(h) {
+    var m = /^(quote|invoice)=(.+)$/.exec(h); if (m) return viewPage(m[1], m[2]);
+    m = /^(quote|invoice)-edit=(.+)$/.exec(h); if (m) return editPage(m[1], m[2] === 'new' ? null : m[2]);
+    m = /^send=(quote|invoice|receipt):(.+)$/.exec(h); if (m) return sendPage(m[1], m[2]);
+    m = /^pay=(.+)$/.exec(h); if (m) return payPage(m[1]);
+    m = /^receipt=(.+)$/.exec(h); if (m) return receiptPage(m[1]);
+    return null;
+  }
+  function salesSection(h) { if (/^(receipt=|send=receipt:)/.test(h)) return 'payments'; if (/^(quote|invoice|quote-edit|invoice-edit|pay)=|^send=/.test(h)) return 'quotes'; return null; }
+
+  /* Old entry points now open the new pages */
+  editDoc = function (kind, d, preset) { S.draft = null; S.docPreset = preset || null; location.hash = kind + '-edit=' + (d && d.id ? d.id : 'new'); };
+  P2['open-doc'] = function (el) { location.hash = el.dataset.kind + '=' + el.dataset.id; };
+  P2['new-quote'] = function (el) { if (!S.clients.length) { toast('Add a client first'); } editDoc('quote', null, el.dataset.client ? { client_id: el.dataset.client, matter_id: el.dataset.matter || null } : null); };
+  P2['new-invoice'] = function (el) { editDoc('invoice', null, el.dataset.client ? { client_id: el.dataset.client, matter_id: el.dataset.matter || null } : null); };
+  P2['quote-to-invoice'] = function (el) {
+    var q = byId(S.quotes, el.dataset.id); if (!q) return;
+    editDoc('invoice', null, { client_id: q.client_id, matter_id: q.matter_id, quote_id: q.id, order_number: q.reference || '', subject: q.subject, terms: (S.settings && S.settings.invoice_terms) || q.terms, _items: itemsOf('quote', q.id).map(function (i) { return { item_id: i.item_id, description: i.description, details: i.details, qty: i.qty, unit_price: i.unit_price, discount: i.discount, discount_type: i.discount_type }; }) });
+  };
+  P2['new-payment'] = function (el) { if (el.dataset.invoice) { $('modal-root').innerHTML = ''; location.hash = 'pay=' + el.dataset.invoice; return; } $('modal-root').innerHTML = ''; editPayment(null); };
+  var _openPay7 = P2['open-payment'];
+  P2['open-payment'] = function (el) { var p = byId(S.payments, el.dataset.id); if (p && p.account === 'business' && p.method !== 'Trust transfer') { location.hash = 'receipt=' + p.id; return; } return _openPay7(el); };
+  document.addEventListener('load', function (e) { var f = e.target; if (!f.classList || !f.classList.contains('docframe')) return; try { f.style.height = (f.contentDocument.documentElement.scrollHeight + 4) + 'px'; } catch (er) { /* cross-origin */ } }, true);
+
   /* ----- Shell: popovers, theme, sidebar ----- */
   function popover(html, anchor, cls) {
     closePop();
@@ -2818,7 +3377,7 @@ function renderNav(cur) {
   }
 
   /* ---------- Router ---------- */
-  function current() { var h = location.hash.slice(1); if (h.indexOf('matter=') === 0) return 'matters'; if (h.indexOf('client=') === 0) return 'clients'; if (h.indexOf('lead=') === 0) return 'inbox'; return V[h] ? h : 'dashboard'; }
+  function current() { var h = location.hash.slice(1); var ss = salesSection(h); if (ss) return ss; if (h.indexOf('matter=') === 0) return 'matters'; if (h.indexOf('client=') === 0) return 'clients'; if (h.indexOf('lead=') === 0) return 'inbox'; return V[h] ? h : 'dashboard'; }
   function render() {
     var h = location.hash.slice(1), cur = current();
     renderNav(cur);
@@ -2831,6 +3390,7 @@ function renderNav(cur) {
       if (!m) { $('view').innerHTML = empty('That matter was not found. <a href="#matters">All matters</a>'); return; }
       if (S.ui.matterTab === 'File notes' && !S.notes[m.id]) loadNotes(m.id).then(render);
       $('view').innerHTML = matterDetail(m);
+    } else if (salesSection(h)) { $('view').innerHTML = salesRoute(h) || empty('Not found.'); syncFoot();
     } else $('view').innerHTML = V[cur]();
     bind(); afterRender();
   }
