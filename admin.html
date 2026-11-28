@@ -342,8 +342,19 @@ input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
       <button class="btn-new" type="submit" style="justify-content:center;margin-top:14px">Sign in</button>
       <button class="btn" type="button" id="magic">Email me a sign-in link</button>
       <p class="hint" style="text-align:center">First time, or forgot your password? Enter your email and use the sign-in link.</p>
-      <p class="msg" id="login-msg" role="alert"></p>
-    </form>
+  <p class="msg" id="login-msg" role="alert"></p>
+</form>
+<form id="mfa-form" class="hidden">
+  <div class="mark"><img src="/assets/images/favicon-32.png" width="26" height="26" alt=""></div>
+  <h1>Two-step sign-in</h1>
+  <p class="tag">Enter the 6-digit code from your authenticator app</p>
+  <label class="lbl" for="mfa-code">Code</label>
+  <input id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" pattern="[0-9 ]*" style="letter-spacing:6px;font-size:20px;text-align:center">
+  <button class="btn-new" type="submit" style="justify-content:center;margin-top:14px">Continue</button>
+  <button class="btn" type="button" id="mfa-cancel">Use a different account</button>
+  <p class="hint" style="text-align:center">Lost your phone? Contact the practice administrator to remove two-step sign-in from your account.</p>
+  <p class="msg" id="mfa-msg" role="alert"></p>
+</form>
   </div>
 </section>
 
@@ -377,6 +388,6 @@ input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
 <div class="toast hidden" id="toast" role="status"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/assets/js/crm.js?v=8"></script>
+<script src="/assets/js/crm.js?v=9"></script>
 </body>
 </html>
