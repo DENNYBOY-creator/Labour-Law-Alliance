@@ -138,12 +138,14 @@
       sb.from('hearings').select('*').order('starts_at', { ascending: true }),
       sb.from('compliance_items').select('*').order('due_date', { ascending: true }),
       sb.from('tasks').select('*').order('due_date', { ascending: true, nullsFirst: false }),
-      sb.from('activity').select('*').order('id', { ascending: false }).limit(300)
+      sb.from('activity').select('*').order('id', { ascending: false }).limit(300),
+      sb.from('trust_entries').select('*').order('entry_date', { ascending: false }),
+      sb.from('retainers').select('*').order('created_at')
     ]);
     var bad = res.find(function (r) { return r.error; });
     if (bad) { $('view').innerHTML = '<div class="callout p-red">Could not load data: ' + esc(bad.error.message) + '</div>'; return false; }
     S.leads = res[0].data; S.clients = res[1].data; S.matters = res[2].data; S.appts = res[3].data; S.deadlines = res[4].data;
-    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data; S.tasks = res[15].data; S.activity = res[16].data;
+    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data; S.tasks = res[15].data; S.activity = res[16].data; S.trust = res[17].data; S.retainers = res[18].data;
     S.me = S.staff.find(function (s) { return S.user && (s.email || '').toLowerCase() === (S.user.email || '').toLowerCase(); }) || {};
     return true;
   }
@@ -727,9 +729,10 @@ function renderNav(cur) {
 
   V.quotes = function () {
     var tab = S.ui.qTab || 'Invoices';
-    var tabs = '<div class="subtabs">' + ['Invoices', 'Quotes', 'Unbilled time'].map(function (x) { return '<button data-qtab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    var tabs = '<div class="subtabs">' + ['Invoices', 'Quotes', 'Retainers', 'Unbilled time'].map(function (x) { return '<button data-qtab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
     var body;
-    if (tab === 'Unbilled time') body = unbilledTab();
+    if (tab === 'Retainers') body = retainersTab();
+    else if (tab === 'Unbilled time') body = unbilledTab();
     else if (tab === 'Quotes') {
       body = '<div class="panel"><div class="tbl"><table><tr><th>No.</th><th>Client</th><th>Date</th><th>Valid until</th><th style="text-align:right">Total</th><th>Status</th></tr>' +
         (S.quotes.map(function (q) { var t = totals(itemsOf('quote', q.id), q.vat_rate); return '<tr class="click" data-act="open-doc" data-kind="quote" data-id="' + q.id + '"><td class="mono">' + esc(q.number) + '</td><td>' + esc(clientName(q.client_id)) + '</td><td class="mono">' + fmt(q.issue_date) + '</td><td class="mono">' + fmt(q.valid_until) + '</td><td class="mono" style="text-align:right">' + R2(t.total) + (q.monthly ? ' /month' : '') + '</td><td>' + quotePill(q.status) + '</td></tr>'; }).join('') || '<tr><td colspan="6">' + empty('No quotes yet.') + '</td></tr>') + '</table></div></div>';
@@ -991,7 +994,7 @@ function renderNav(cur) {
     else if (tab === 'Email' || tab === 'Integrations') body = settings3(tab);
     else if (tab === 'Users') {
       body = '<div class="panel"><div class="hd"><h2>People with access</h2>' + (isPartner() ? '<button class="btn pri" data-act="invite-staff">Invite staff member</button>' : '') + '</div><div class="tbl"><table><tr><th>Name</th><th>Email</th><th>Role</th><th>Signed in before</th><th>Access</th><th></th></tr>' +
-        S.staff.map(function (s) { return '<tr><td><b>' + esc(s.full_name || '—') + '</b></td><td class="mono">' + esc(s.email) + '</td><td>' + roleLabel(s.role) + '</td><td>' + (s.user_id ? pill('Yes', 'p-green') : pill('Not yet', 'p-amber')) + '</td><td>' + (s.active ? pill('Active', 'p-green') : pill('Removed', 'p-red')) + '</td><td>' + (isPartner() ? '<button class="btn sm" data-act="edit-staff" data-id="' + s.id + '">Edit</button>' : '') + '</td></tr>'; }).join('') + '</table></div>' +
+        S.staff.map(function (s) { return '<tr><td><b>' + esc(s.full_name || '—') + '</b></td><td class="mono">' + esc(s.email) + '</td><td>' + roleLabel(s.role) + '</td><td>' + (s.user_id ? pill('Yes', 'p-green') : pill('Not yet', 'p-amber')) + mfaPill(s.email) + '</td><td>' + (s.active ? pill('Active', 'p-green') : pill('Removed', 'p-red')) + '</td><td>' + (isPartner() ? '<button class="btn sm" data-act="edit-staff" data-id="' + s.id + '">Edit</button>' : '') + '</td></tr>'; }).join('') + '</table></div>' +
         '<p class="meta" style="margin-top:10px">Public sign-up is closed: only people invited here can sign in. Invited staff get an email with a link to set up their login.</p></div>' +
         '<div class="panel"><h2 style="margin-bottom:8px">What each role can do</h2><div class="tbl"><table><tr><th>Role</th><th>Matters, clients, inbox, appointments</th><th>Quotes, invoices, payments</th><th>Company & banking settings</th><th>Invite and remove staff</th></tr>' +
         ROLES.map(function (r) { var y = pill('Yes', 'p-green'), n = '<span class="meta">—</span>'; return '<tr><td>' + r[1] + '</td><td>' + y + '</td><td>' + y + '</td><td>' + (r[0] === 'partner' || r[0] === 'bookkeeper' ? y : n) + '</td><td>' + (r[0] === 'partner' ? y : n) + '</td></tr>'; }).join('') + '</table></div></div>';
@@ -1274,7 +1277,7 @@ function renderNav(cur) {
     var reader = !m.sel ? empty('Choose an email on the left.') : !msg ? '<p class="meta">Opening…</p>' : msg.error ? '<div class="callout p-red">' + esc(msg.error) + '</div>' :
       '<div style="display:flex;flex-direction:column;gap:10px"><div><div class="meta">' + fmtDT(msg.date) + '</div><h2 style="margin-top:4px">' + esc(msg.subject) + '</h2><div class="meta">From <b>' + esc(who(msg.from)) + '</b> &lt;' + esc((msg.from[0] || {}).address || '') + '&gt;' + (msg.to.length ? ' · to ' + esc(msg.to.map(function (x) { return x.address; }).join(', ')) : '') + '</div></div>' +
       (msg.html ? '<iframe sandbox="" referrerpolicy="no-referrer" id="mail-frame" style="width:100%;height:420px;border:1px solid var(--line);border-radius:8px;background:#fff" title="Email"></iframe>' : '<div style="white-space:pre-wrap;border:1px solid var(--line);border-radius:8px;padding:12px;max-height:420px;overflow:auto">' + esc(msg.text) + '</div>') +
-      (msg.attachments.length ? '<div class="meta">Attachments (open them in Outlook): ' + msg.attachments.map(function (a) { return esc(a.filename); }).join(', ') + '</div>' : '') +
+      (msg.attachments.length ? '<div><span class="lbl">Attachments</span><div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">' + msg.attachments.map(function (a, i) { return '<div class="row" style="align-items:center;padding:8px 10px"><div class="grow"><b>' + esc(a.filename) + '</b> <span class="meta">' + fileSize(a.size) + '</span></div><button class="btn sm" data-act="mail-save" data-idx="' + i + '">Save to documents</button></div>'; }).join('') + '</div></div>' : '') +
       '<form id="reply-form" class="f" style="grid-template-columns:1fr"><div class="fld"><label for="reply-body">Reply to ' + esc((msg.from[0] || {}).address || '') + '</label><textarea id="reply-body" placeholder="Write your reply…"></textarea></div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn pri" type="submit">Send reply</button><button class="btn" type="button" data-act="mail-to-lead">Add sender to pipeline</button><span class="msg" id="reply-msg"></span></div></form></div>';
     return '<div class="banner">' + mailBanner() + '<button class="btn sm" data-act="mail-refresh" style="margin-left:auto">Refresh</button></div>' +
       '<div class="panel inbox"><div class="ilist">' + (m.list.map(function (x) { return '<button class="imsg' + (x.seen ? '' : ' unread') + (m.sel === x.uid ? ' on' : '') + '" data-act="mail-open" data-uid="' + x.uid + '"><span class="dot"></span><span style="flex:1;min-width:0"><span style="display:flex;justify-content:space-between;gap:8px"><b>' + esc(who(x.from)) + '</b><span class="mono">' + fmt(x.date) + '</span></span><span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.subject) + '</span></span></button>'; }).join('') || empty('The inbox is empty.')) + '</div><div class="iread">' + reader + '</div></div>';
@@ -1476,7 +1479,7 @@ function renderNav(cur) {
         d.checklist = {}; document.querySelectorAll('.hck').forEach(function (c) { d.checklist[c.dataset.k] = c.checked; });
         var r = isNew ? await sb.from('hearings').insert(d).select().single() : await sb.from('hearings').update(d).eq('id', h.id).select().single();
         if (r.error) return dbErr(r);
-        upsertLocal(S.hearings, r.data); await syncHearingAppt(r.data); S.hearings.sort(function (a, b) { return (a.starts_at || '') < (b.starts_at || '') ? -1 : 1; });
+        var before = h ? Object.assign({}, h) : null; upsertLocal(S.hearings, r.data); await syncHearingAppt(r.data); dismissalClock(before, r.data); S.hearings.sort(function (a, b) { return (a.starts_at || '') < (b.starts_at || '') ? -1 : 1; });
         toast(isNew ? 'Hearing added' : 'Hearing saved'); render();
       },
       del: isNew ? null : async function () { var r = await sb.from('hearings').delete().eq('id', h.id); if (r.error) return dbErr(r); S.hearings = S.hearings.filter(function (x) { return x.id !== h.id; }); toast('Hearing deleted'); render(); }
@@ -1587,7 +1590,7 @@ function renderNav(cur) {
     return head('Employer compliance', 'Statutory calendar for employer clients', 'Recurring obligations for your employer clients. Mark one done and the next one is scheduled automatically. Everything here also appears under Deadlines.', '<button class="btn pri" data-act="seed-compliance">Add standard obligations</button><button class="btn" data-act="new-compliance">Add one</button>') +
       '<div class="grid g4"><div class="panel stat"><b style="color:var(--red)">' + open.filter(function (c) { return daysLeft(c.due_date) < 0; }).length + '</b><span>Overdue</span></div><div class="panel stat"><b>' + open.filter(function (c) { var n = daysLeft(c.due_date); return n >= 0 && n <= 30; }).length + '</b><span>Due in the next 30 days</span></div><div class="panel stat"><b>' + open.length + '</b><span>Open obligations</span></div><div class="panel stat"><b>' + employers.length + '</b><span>Employer clients</span></div></div>' +
       '<div class="panel"><div class="hd"><h2>Coming up</h2></div><div class="tbl"><table><tr><th>Due</th><th>Obligation</th><th>Employer</th><th>Law</th><th>Repeats</th><th></th></tr>' +
-      (open.map(function (c) { return '<tr><td class="mono">' + fmt(c.due_date) + '<div>' + urg(daysLeft(c.due_date)) + '</div></td><td><a href="#" data-act="open-compliance" data-id="' + c.id + '"><b>' + esc(c.obligation) + '</b></a>' + (c.notes ? '<div class="meta">' + esc(c.notes) + '</div>' : '') + '</td><td>' + esc(clientName(c.client_id)) + '</td><td>' + esc(c.law || '') + '</td><td>' + esc(c.recurrence) + '</td><td><button class="btn sm" data-act="done-compliance" data-id="' + c.id + '">Mark done</button></td></tr>'; }).join('') || '<tr><td colspan="6">' + empty(employers.length ? 'Nothing scheduled. Use “Add standard obligations” for each employer client.' : 'Add an employer client first, then add their obligations here.') + '</td></tr>') + '</table></div></div>' +
+      (open.map(function (c) { return '<tr><td class="mono">' + fmt(c.due_date) + '<div>' + urg(daysLeft(c.due_date)) + '</div></td><td><a href="#" data-act="open-compliance" data-id="' + c.id + '"><b>' + esc(c.obligation) + '</b></a>' + (c.notes ? '<div class="meta">' + esc(c.notes) + '</div>' : '') + '</td><td>' + esc(clientName(c.client_id)) + '</td><td>' + esc(c.law || '') + '</td><td>' + esc(c.recurrence) + '</td><td><button class="btn sm" data-act="compliance-quote" data-id="' + c.id + '">Quote</button> <button class="btn sm" data-act="done-compliance" data-id="' + c.id + '">Mark done</button></td></tr>'; }).join('') || '<tr><td colspan="6">' + empty(employers.length ? 'Nothing scheduled. Use “Add standard obligations” for each employer client.' : 'Add an employer client first, then add their obligations here.') + '</td></tr>') + '</table></div></div>' +
       (done.length ? '<div class="panel"><div class="hd"><h2>Recently completed</h2></div><div class="list">' + done.map(function (c) { return '<div class="row"><div class="grow">' + esc(c.obligation) + '<div class="meta">' + esc(clientName(c.client_id)) + ' · due ' + fmt(c.due_date) + '</div></div>' + pill('Done ' + fmt(c.completed_on), 'p-green') + '</div>'; }).join('') + '</div></div>' : '') +
       '<p class="meta">Dates are the usual statutory deadlines. Check each year for changes announced by the Department of Employment and Labour, SARS or the Compensation Fund.</p>';
   };
@@ -1764,7 +1767,7 @@ function renderNav(cur) {
         : (can ? '<button class="btn pri" data-act="cal-token" data-mode="new">Create my calendar link</button>' : '')) + '</div>' +
       '<div class="panel"><div class="hd"><h2>Appointment reminders and daily agenda</h2>' + (st.reminder_key ? pill(st.reminders_enabled ? 'Reminders on' : 'Reminders off', st.reminders_enabled ? 'p-green' : 'p-amber') : pill('Not set up', 'p-amber')) + '</div>' +
       '<p class="sub" style="margin:0 0 12px">Every morning at about 06:00, clients with a confirmed appointment, CCMA or Labour Court date the next day get an email reminder (once per appointment), and the office gets today’s diary at info@.</p>' +
-      (st.reminder_key ? '<form id="rem-form" class="f" style="grid-template-columns:1fr"><label class="check" style="font-weight:400"><input type="checkbox" id="rem-on"' + (st.reminders_enabled ? ' checked' : '') + (can ? '' : ' disabled') + '> Email clients a reminder the day before their appointment</label><label class="check" style="font-weight:400"><input type="checkbox" id="agenda-on"' + (st.daily_agenda_enabled ? ' checked' : '') + (can ? '' : ' disabled') + '> Email the office today’s diary every morning</label>' + (can ? '<div><button class="btn pri" type="submit">Save</button> <span class="msg" id="rem-msg"></span></div>' : '') + '</form>' +
+      (st.reminder_key ? '<form id="rem-form" class="f" style="grid-template-columns:1fr"><label class="check" style="font-weight:400"><input type="checkbox" id="rem-on"' + (st.reminders_enabled ? ' checked' : '') + (can ? '' : ' disabled') + '> Email clients a reminder the day before their appointment</label><label class="check" style="font-weight:400"><input type="checkbox" id="agenda-on"' + (st.daily_agenda_enabled ? ' checked' : '') + (can ? '' : ' disabled') + '> Email the office today’s diary every morning</label><label class="check" style="font-weight:400"><input type="checkbox" id="report-on"' + (st.monthly_report_enabled !== false ? ' checked' : '') + (can ? '' : ' disabled') + '> Email partners a practice report on the 1st of each month</label>' + (can ? '<div><button class="btn pri" type="submit">Save</button> <span class="msg" id="rem-msg"></span></div>' : '') + '</form>' +
         '<div style="margin-top:14px"><b>Last step, done once:</b> in <a href="https://vercel.com/" target="_blank" rel="noopener">Vercel</a> → project <b>labour</b> → Settings → Environment Variables, add <code>REMINDER_KEY</code> with this value (mark it Sensitive), then redeploy:</div>' + copy('rem-key', st.reminder_key) +
         '<p class="meta" style="margin-top:8px">The key lets the morning job read tomorrow’s appointments. If you make a new key, update it in Vercel too.</p>' + (can ? '<button class="btn sm" data-act="rem-key">Make a new key</button>' : '')
         : (can ? '<button class="btn pri" data-act="rem-key">Set up reminders</button>' : '')) + '</div>';
@@ -1777,7 +1780,7 @@ function renderNav(cur) {
   P2['cal-token'] = function (el) { if (el.dataset.mode === 'off') { if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Click again to turn off'; return; } return saveSettings({ calendar_token: null }, 'Calendar link turned off'); } if (S.settings.calendar_token && el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Click again: the old link will stop working'; return; } return saveSettings({ calendar_token: randomKey() }, 'Calendar link ready'); };
   P2['rem-key'] = function (el) { if (S.settings.reminder_key && el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Click again: update Vercel afterwards'; return; } return saveSettings(Object.assign({ reminder_key: randomKey() }, S.settings.reminder_key ? {} : { reminders_enabled: true, daily_agenda_enabled: true }), 'Reminder key created. Add it to Vercel to finish.'); };
   P2['copy'] = function (el) { var i = $(el.dataset.target); i.select(); (navigator.clipboard ? navigator.clipboard.writeText(i.value) : Promise.reject()).then(function () { toast('Copied'); }, function () { document.execCommand('copy'); toast('Copied'); }); };
-  document.addEventListener('submit', function (e) { if (e.target.id !== 'rem-form') return; e.preventDefault(); saveSettings({ reminders_enabled: $('rem-on').checked, daily_agenda_enabled: $('agenda-on').checked }, 'Saved'); });
+  document.addEventListener('submit', function (e) { if (e.target.id !== 'rem-form') return; e.preventDefault(); saveSettings({ reminders_enabled: $('rem-on').checked, daily_agenda_enabled: $('agenda-on').checked, monthly_report_enabled: $('report-on').checked }, 'Saved'); });
 
   /* =====================================================================
      INTERLINKING: search, client page, tasks & My work, stage assistant, activity & notifications
@@ -1884,7 +1887,7 @@ function renderNav(cur) {
         '<h3 style="margin:18px 0 6px">Change history</h3>' + historyList(S.activity.filter(function (a) { return a.client_id === c.id; }).slice(0, 30), 'client', c.id);
     }
     if (tab === 'Matters') body = '<div style="margin-bottom:10px"><button class="btn pri" data-act="new-matter" data-client="' + c.id + '">New matter</button></div><div class="tbl"><table><tr><th>Matter</th><th>Type</th><th>Stage</th><th>Next step</th><th>Attorney</th></tr>' + (ms.map(function (m) { return '<tr class="click" data-matter="' + m.id + '"><td><span class="mono">' + esc(m.ref) + '</span><br><b>' + esc(m.title) + '</b></td><td>' + esc(m.dispute_type || '') + '</td><td>' + stagePill(m.stage) + '</td><td>' + (m.next_date ? esc(m.next_step || '') + ' · ' + fmt(m.next_date) : '—') + '</td><td>' + esc(m.assigned_email ? staffName(m.assigned_email) : m.attorney || '—') + '</td></tr>'; }).join('') || '<tr><td colspan="5">' + empty('No matters yet.') + '</td></tr>') + '</table></div>';
-    if (tab === 'Money') body = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn pri" data-act="new-invoice" data-client="' + c.id + '">New invoice</button><button class="btn" data-act="new-quote" data-client="' + c.id + '">New quote</button><button class="btn" data-act="new-payment-client" data-client="' + c.id + '">Record payment</button></div>' +
+    if (tab === 'Money') body = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn pri" data-act="new-invoice" data-client="' + c.id + '">New invoice</button><button class="btn" data-act="new-quote" data-client="' + c.id + '">New quote</button><button class="btn" data-act="new-payment-client" data-client="' + c.id + '">Record payment</button><button class="btn" data-act="new-retainer" data-client="' + c.id + '">Set up retainer</button>' + (trustClients().indexOf(c.id) >= 0 ? '<button class="btn" data-act="trust-statement" data-client="' + c.id + '">Trust statement</button>' : '') + (trustBal(c.id) > 0 ? '<button class="btn" data-act="trust-transfer" data-client="' + c.id + '">Transfer trust to fees</button>' : '') + '</div>' +
       '<div class="tbl"><table><tr><th>Date</th><th>Item</th><th style="text-align:right">Amount</th><th>Status</th></tr>' +
       S.quotes.filter(function (q) { return q.client_id === c.id; }).map(function (q) { return '<tr class="click" data-act="open-doc" data-kind="quote" data-id="' + q.id + '"><td class="mono">' + fmt(q.issue_date) + '</td><td>Quote ' + esc(q.number) + '</td><td class="mono" style="text-align:right">' + R2(totals(itemsOf('quote', q.id), q.vat_rate).total) + '</td><td>' + quotePill(q.status) + '</td></tr>'; }).join('') +
       inv.map(function (i) { var st = invState(i); return '<tr class="click" data-act="open-doc" data-kind="invoice" data-id="' + i.id + '"><td class="mono">' + fmt(i.issue_date) + '</td><td>Invoice ' + esc(i.number) + '</td><td class="mono" style="text-align:right">' + R2(invTotal(i)) + '</td><td>' + pill(st.label, st.cls) + '</td></tr>'; }).join('') +
@@ -1895,7 +1898,7 @@ function renderNav(cur) {
     if (tab === 'Emails') body = clientEmails(c);
     return '<div><a href="#clients">← All clients</a></div>' + head({ individual: 'Individual', employer: 'Employer', union: 'Trade union' }[c.kind] + (c.id_or_reg_no ? ' · ' + esc(c.id_or_reg_no) : ''), esc(c.name), [c.contact_person, c.phone, c.email, c.address].filter(Boolean).map(esc).join(' · '), '<button class="btn pri" data-act="edit-client" data-id="' + c.id + '">Edit client</button>') +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' + phoneLinks(c.phone, c.email) + pill('FICA: ' + { done: 'done', partial: 'partial', outstanding: 'outstanding' }[c.fica_status], c.fica_status === 'done' ? 'p-green' : 'p-amber') + pill(c.popia_consent ? 'POPIA signed' : 'POPIA outstanding', c.popia_consent ? 'p-green' : 'p-red') + (c.fee_plan ? pill(c.fee_plan) : '') + '</div>' +
-      '<div class="grid g4"><div class="panel stat"><b>' + ms.filter(function (m) { return m.stage !== 'Closed'; }).length + '</b><span>Open matters (' + ms.length + ' in total)</span></div><div class="panel stat"><b' + (owed ? ' style="color:var(--red)"' : '') + '>' + R2(owed) + '</b><span>Owed</span></div><div class="panel stat"><b>' + R2(trust) + '</b><span>Trust money received</span></div><div class="panel stat"><b>' + ts.filter(function (t) { return t.status === 'open'; }).length + '</b><span>Open tasks</span></div></div>' +
+      '<div class="grid g4"><div class="panel stat"><b>' + ms.filter(function (m) { return m.stage !== 'Closed'; }).length + '</b><span>Open matters (' + ms.length + ' in total)</span></div><div class="panel stat"><b' + (owed ? ' style="color:var(--red)"' : '') + '>' + R2(owed) + '</b><span>Owed</span></div><div class="panel stat"><b>' + R2(trustBal(c.id)) + '</b><span>Held in trust</span></div><div class="panel stat"><b>' + ts.filter(function (t) { return t.status === 'open'; }).length + '</b><span>Open tasks</span></div></div>' +
       conflictPanel(c.name, { client: c.id, lead: c.lead_id }) +
       '<div class="panel"><div class="tabs" role="tablist">' + tabs.map(function (x) { return '<button role="tab" class="' + (x === tab ? 'on' : '') + '" data-ctab="' + x + '">' + x + '</button>'; }).join('') + '</div><div style="padding-top:14px">' + body + '</div></div>';
   }
@@ -2036,6 +2039,364 @@ function renderNav(cur) {
   });
   document.addEventListener('click', function (e) { var b = e.target.closest('[data-go]'); if (b) { go(b.dataset.go); return; } if ($('pop') && !e.target.closest('#pop') && !e.target.closest('#bell,#btn-new,#avatar-btn,#me-card')) closePop(); });
 
+  /* =====================================================================
+     PHASE 5: trust ledger, retainers, email attachments, hearing clock,
+     compliance quotes, monthly report, two-step sign-in
+     ===================================================================== */
+
+  /* ----- Trust ledger (Legal Practice Act s86) ----- */
+  var TKIND = { transfer_to_fees: 'Transfer to fees', refund: 'Refund to client', payment_out: 'Payment on the client’s behalf' };
+  function trustIn(cid) { return round2(S.payments.filter(function (p) { return p.client_id === cid && p.account === 'trust'; }).reduce(function (s, p) { return s + Number(p.amount); }, 0)); }
+  function trustOut(cid) { return round2(S.trust.filter(function (e) { return e.client_id === cid; }).reduce(function (s, e) { return s + Number(e.amount); }, 0)); }
+  function trustBal(cid) { return round2(trustIn(cid) - trustOut(cid)); }
+  function trustRows(cid) {
+    var rows = S.payments.filter(function (p) { return p.account === 'trust' && (!cid || p.client_id === cid); }).map(function (p) {
+      return { date: p.received_on, at: p.created_at || '', cid: p.client_id, desc: 'Deposit' + (p.method ? ' (' + p.method + ')' : '') + (p.reference ? ' · ' + p.reference : ''), inAmt: Number(p.amount), out: 0, pay: p };
+    }).concat(S.trust.filter(function (e) { return !cid || e.client_id === cid; }).map(function (e) {
+      var inv = byId(S.invoices, e.invoice_id);
+      return { date: e.entry_date, at: e.created_at || '', cid: e.client_id, desc: TKIND[e.kind] + (inv ? ' · invoice ' + inv.number : '') + (e.paid_to ? ' · to ' + e.paid_to : '') + (e.reference && !inv ? ' · ' + e.reference : ''), inAmt: 0, out: Number(e.amount), entry: e };
+    }));
+    rows.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.at < b.at ? -1 : 1); });
+    var bal = 0; rows.forEach(function (r) { bal = round2(bal + r.inAmt - r.out); r.bal = bal; });
+    return rows;
+  }
+  function trustClients() {
+    var ids = []; S.payments.forEach(function (p) { if (p.account === 'trust' && ids.indexOf(p.client_id) < 0) ids.push(p.client_id); });
+    S.trust.forEach(function (e) { if (ids.indexOf(e.client_id) < 0) ids.push(e.client_id); });
+    return ids.filter(Boolean);
+  }
+  async function refreshMoney() {
+    var r = await Promise.all([sb.from('payments').select('*').order('received_on', { ascending: false }), sb.from('trust_entries').select('*').order('entry_date', { ascending: false }), sb.from('invoices').select('*').order('created_at', { ascending: false }), sb.from('line_items').select('*').order('sort')]);
+    if (!r[0].error) S.payments = r[0].data; if (!r[1].error) S.trust = r[1].data; if (!r[2].error) S.invoices = r[2].data; if (!r[3].error) S.items = r[3].data;
+  }
+  function trustLedger() {
+    var ids = trustClients(), ms = new Date(today().getFullYear(), today().getMonth(), 1);
+    var total = ids.reduce(function (s, id) { return s + trustBal(id); }, 0);
+    var inMonth = S.payments.filter(function (p) { return p.account === 'trust' && D(p.received_on) >= ms; }).reduce(function (s, p) { return s + Number(p.amount); }, 0);
+    var outMonth = S.trust.filter(function (e) { return D(e.entry_date) >= ms; }).reduce(function (s, e) { return s + Number(e.amount); }, 0);
+    var st = S.settings || {};
+    var moves = trustRows(null).slice(-40).reverse();
+    return (st.trust_account ? '' : '<div class="callout p-amber">Your trust bank account is not set, so statements leave it out. <a href="#settings">Add it in Company settings</a>.</div>') +
+      '<div class="grid g4"><div class="panel stat"><b>' + R2(total) + '</b><span>Held in trust</span></div><div class="panel stat"><b>' + ids.filter(function (id) { return trustBal(id) > 0; }).length + '</b><span>Clients with money in trust</span></div><div class="panel stat"><b>' + R2(inMonth) + '</b><span>Received into trust this month</span></div><div class="panel stat"><b>' + R2(outMonth) + '</b><span>Paid out of trust this month</span></div></div>' +
+      '<div class="panel"><div class="hd"><h2>Balance per client</h2><span class="meta">A client’s balance can never go below zero: the CRM refuses a payment out that is bigger than what is held.</span></div><div class="tbl"><table><tr><th>Client</th><th style="text-align:right">Received</th><th style="text-align:right">Paid out</th><th style="text-align:right">Balance</th><th></th></tr>' +
+      (ids.map(function (id) { var b = trustBal(id); return '<tr><td><a href="#client=' + id + '"><b>' + esc(clientName(id)) + '</b></a></td><td class="mono" style="text-align:right">' + R2(trustIn(id)) + '</td><td class="mono" style="text-align:right">' + R2(trustOut(id)) + '</td><td class="mono" style="text-align:right"><b>' + R2(b) + '</b></td><td style="text-align:right;white-space:nowrap"><button class="btn sm" data-act="trust-statement" data-client="' + id + '">Statement</button> ' + (b > 0 ? '<button class="btn sm" data-act="trust-transfer" data-client="' + id + '">Transfer to fees</button> <button class="btn sm" data-act="trust-out" data-client="' + id + '">Pay out</button>' : '') + '</td></tr>'; }).join('') || '<tr><td colspan="5">' + empty('No trust money recorded yet. Record a payment and choose “Trust account”.') + '</td></tr>') + '</table></div></div>' +
+      '<div class="panel"><div class="hd"><h2>Recent trust movements</h2></div><div class="tbl"><table><tr><th>Date</th><th>Client</th><th>Movement</th><th style="text-align:right">In</th><th style="text-align:right">Out</th><th></th></tr>' +
+      (moves.map(function (m) { return '<tr><td class="mono">' + fmt(m.date) + '</td><td>' + esc(clientName(m.cid)) + '</td><td>' + esc(m.desc) + '</td><td class="mono" style="text-align:right">' + (m.inAmt ? R2(m.inAmt) : '') + '</td><td class="mono" style="text-align:right">' + (m.out ? R2(m.out) : '') + '</td><td style="text-align:right">' + (m.entry ? '<button class="btn sm" data-act="trust-reverse" data-id="' + m.entry.id + '">Reverse</button>' : '<button class="btn sm" data-act="open-payment" data-id="' + m.pay.id + '">Open</button>') + '</td></tr>'; }).join('') || '<tr><td colspan="6">' + empty('Nothing yet.') + '</td></tr>') + '</table></div></div>';
+  }
+  var _payBase = V.payments;
+  V.payments = function () {
+    var tab = S.ui.payTab || 'Received & owed';
+    var tabs = '<div class="subtabs">' + ['Received & owed', 'Trust ledger'].map(function (x) { return '<button data-paytab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    if (tab === 'Trust ledger') return head('Payments', 'Trust ledger', 'Money held for clients, kept apart from fees as the Legal Practice Act (s86) requires. Deposits come from payments marked “Trust account”; transfers to fees settle invoices.', '<button class="btn pri" data-act="trust-deposit">Record trust deposit</button><button class="btn" data-act="trust-transfer">Transfer to fees</button><button class="btn" data-act="trust-out">Pay out</button>') + tabs + trustLedger();
+    var base = _payBase(), i = base.indexOf('<div class="grid g4">');
+    return i < 0 ? base + tabs : base.slice(0, i) + tabs + base.slice(i);
+  };
+  document.addEventListener('click', function (e) { var b = e.target.closest('[data-paytab]'); if (!b) return; S.ui.payTab = b.dataset.paytab; render(); });
+  P2['trust-deposit'] = function (el) { $('modal-root').innerHTML = ''; editPayment(null, { account: 'trust', client_id: el.dataset.client || '' }); };
+  var _openPayment = P2['open-payment'];
+  P2['open-payment'] = function (el) {
+    var p = byId(S.payments, el.dataset.id);
+    if (p && p.method === 'Trust transfer') { toast('This payment is a transfer from trust. To undo it, reverse it in the trust ledger.'); S.ui.payTab = 'Trust ledger'; location.hash = 'payments'; render(); return; }
+    return _openPayment(el);
+  };
+  function openInvoicesOf(cid) { return S.invoices.filter(function (i) { var k = invState(i).key; return i.client_id === cid && k !== 'paid' && k !== 'cancelled' && k !== 'draft'; }); }
+  P2['trust-transfer'] = function (el) {
+    var withMoney = trustClients().filter(function (id) { return trustBal(id) > 0; });
+    if (!withMoney.length) { toast('No client has money in trust yet.'); return; }
+    var cid = el.dataset.client && withMoney.indexOf(el.dataset.client) >= 0 ? el.dataset.client : withMoney[0];
+    openForm({
+      title: 'Transfer from trust to fees', saveLabel: 'Transfer',
+      fields: [
+        { k: 'client_id', label: 'Client', type: 'select', req: true, options: withMoney.map(function (id) { return [id, clientName(id) + ' · ' + R2(trustBal(id)) + ' in trust']; }) },
+        { k: 'invoice_id', label: 'Invoice it pays', type: 'select', req: true, blank: 'Choose an invoice', options: [] },
+        { k: 'amount', label: 'Amount (R)', type: 'number', step: 0.01, req: true },
+        { k: 'entry_date', label: 'Date', type: 'date', req: true },
+        { k: 'notes', label: 'Notes', type: 'textarea', full: true }
+      ],
+      values: { client_id: cid, entry_date: ymd(today()) },
+      extra: '<p class="meta full" id="tt-hint" style="margin:0"></p>',
+      save: async function (d) {
+        var inv = byId(S.invoices, d.invoice_id), bal = trustBal(d.client_id), ib = inv ? invState(inv).bal : 0;
+        if (!(d.amount > 0)) return 'Enter an amount.';
+        if (d.amount > bal + 0.001) return 'Only ' + R2(bal) + ' is held in trust for this client.';
+        if (d.amount > ib + 0.001) return 'The invoice balance is only ' + R2(ib) + '.';
+        var r = await sb.rpc('trust_transfer', { p_client: d.client_id, p_invoice: d.invoice_id, p_amount: d.amount, p_date: d.entry_date, p_notes: d.notes || null });
+        if (r.error) return r.error.message;
+        await refreshMoney(); toast(R2(d.amount) + ' transferred from trust to invoice ' + inv.number); render();
+      }
+    });
+    var cs = $('m-client_id'), is = $('m-invoice_id'), am = $('m-amount');
+    var fill = function () {
+      var list = openInvoicesOf(cs.value);
+      is.innerHTML = '<option value="">' + (list.length ? 'Choose an invoice' : 'No unpaid invoices for this client') + '</option>' + list.map(function (i) { return '<option value="' + i.id + '">' + esc(i.number + ' · balance ' + R2(invState(i).bal)) + '</option>'; }).join('');
+      if (list.length === 1) is.value = list[0].id; pick();
+    };
+    var pick = function () { var inv = byId(S.invoices, is.value), b = trustBal(cs.value); if (inv) am.value = Math.min(b, invState(inv).bal).toFixed(2); $('tt-hint').textContent = 'Held in trust for this client: ' + R2(b) + '.'; };
+    cs.addEventListener('change', fill); is.addEventListener('change', pick); fill();
+  };
+  P2['trust-out'] = function (el) {
+    var withMoney = trustClients().filter(function (id) { return trustBal(id) > 0; });
+    if (!withMoney.length) { toast('No client has money in trust yet.'); return; }
+    var cid = el.dataset.client && withMoney.indexOf(el.dataset.client) >= 0 ? el.dataset.client : withMoney[0];
+    openForm({
+      title: 'Pay out of trust', saveLabel: 'Record payment out',
+      fields: [
+        { k: 'client_id', label: 'Client', type: 'select', req: true, options: withMoney.map(function (id) { return [id, clientName(id) + ' · ' + R2(trustBal(id)) + ' in trust']; }) },
+        { k: 'kind', label: 'Type', type: 'select', options: [['refund', 'Refund to the client'], ['payment_out', 'Payment on the client’s behalf']] },
+        { k: 'paid_to', label: 'Paid to', ph: 'e.g. the employee (settlement), sheriff, advocate' },
+        { k: 'amount', label: 'Amount (R)', type: 'number', step: 0.01, req: true },
+        { k: 'entry_date', label: 'Date paid', type: 'date', req: true },
+        { k: 'matter_id', label: 'Matter', type: 'select', blank: 'Not linked', options: S.matters.map(function (m) { return [m.id, m.ref + ' · ' + m.title]; }) },
+        { k: 'reference', label: 'Bank reference' },
+        { k: 'notes', label: 'Notes', type: 'textarea', full: true }
+      ],
+      values: { client_id: cid, kind: 'refund', entry_date: ymd(today()) },
+      save: async function (d) {
+        var bal = trustBal(d.client_id);
+        if (!(d.amount > 0)) return 'Enter an amount.';
+        if (d.amount > bal + 0.001) return 'Only ' + R2(bal) + ' is held in trust for this client.';
+        var r = await sb.from('trust_entries').insert(d).select().single(); if (r.error) return dbErr(r);
+        S.trust.unshift(r.data); toast(R2(d.amount) + ' paid out of trust'); render();
+      }
+    });
+  };
+  P2['trust-reverse'] = async function (el) {
+    if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Click again to reverse'; return; }
+    var e = byId(S.trust, el.dataset.id); if (!e) return;
+    var r = e.payment_id ? await sb.from('payments').delete().eq('id', e.payment_id) : await sb.from('trust_entries').delete().eq('id', e.id);
+    if (r.error) { toast(r.error.message); return; }
+    await refreshMoney(); toast('Reversed: ' + R2(e.amount) + ' is back in trust'); render();
+  };
+  P2['trust-statement'] = function (el) {
+    var cid = el.dataset.client, c = byId(S.clients, cid) || {}, st = S.settings || {}, rows = trustRows(cid);
+    var td = 'padding:6px 8px;border-bottom:1px solid #ddd;font-size:13.5px';
+    printHtml(letterHtml('Trust account statement', [
+      '<p><b>Client:</b> ' + esc(c.name || '') + (c.id_or_reg_no ? ' (' + esc(c.id_or_reg_no) + ')' : '') + '<br><b>Statement date:</b> ' + fmt(today()) + '</p>',
+      '<table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif"><tr><th align="left" style="' + td + '">Date</th><th align="left" style="' + td + '">Movement</th><th align="right" style="' + td + '">In</th><th align="right" style="' + td + '">Out</th><th align="right" style="' + td + '">Balance</th></tr>' +
+        (rows.map(function (r) { return '<tr><td style="' + td + ';white-space:nowrap">' + fmt(r.date) + '</td><td style="' + td + '">' + esc(r.desc) + '</td><td align="right" style="' + td + '">' + (r.inAmt ? R2(r.inAmt) : '') + '</td><td align="right" style="' + td + '">' + (r.out ? R2(r.out) : '') + '</td><td align="right" style="' + td + '">' + R2(r.bal) + '</td></tr>'; }).join('') || '<tr><td colspan="5" style="' + td + '">No movements.</td></tr>') + '</table>',
+      '<p><b>Balance held in trust: ' + R2(trustBal(cid)) + '</b></p>',
+      st.trust_account ? '<p style="font-size:13px;color:#555">Trust account: ' + esc([st.trust_bank_name, st.trust_holder, 'account ' + st.trust_account, st.trust_branch ? 'branch ' + st.trust_branch : ''].filter(Boolean).join(' · ')) + '</p>' : '',
+      '<p style="font-size:13px;color:#555">Money held in trust belongs to the client and is kept in a separate trust account as required by section 86 of the Legal Practice Act, 2014.</p>'
+    ], 'For ' + (st.trading_name || 'Labour Law Alliance')));
+  };
+
+  /* ----- Retainers: monthly invoices created automatically ----- */
+  function retainerNext(r) {
+    if (!r.active) return null;
+    var t = today(), ms = new Date(t.getFullYear(), t.getMonth(), 1), start = D(r.starts_on);
+    var m = r.last_month && D(r.last_month) >= ms ? new Date(t.getFullYear(), t.getMonth() + 1, 1) : ms;
+    if (start > new Date(m.getFullYear(), m.getMonth() + 1, 0)) m = new Date(start.getFullYear(), start.getMonth(), 1);
+    var d = new Date(m.getFullYear(), m.getMonth(), r.day_of_month);
+    if (d < start) d = start;
+    if (r.ends_on && D(r.ends_on) < new Date(d.getFullYear(), d.getMonth(), 1)) return null;
+    return d < t ? t : d;
+  }
+  function retainersTab() {
+    var st = S.settings || {}, rs = S.retainers.slice().sort(function (a, b) { return clientName(a.client_id) < clientName(b.client_id) ? -1 : 1; });
+    var monthly = rs.filter(function (r) { return r.active; }).reduce(function (s, r) { return s + Number(r.amount); }, 0);
+    var invs = S.invoices.filter(function (i) { return i.retainer_id; }).slice(0, 12);
+    return '<div class="callout">Each morning the CRM creates the month’s invoice for every retainer that has reached its invoice day. With “Email automatically” ticked, the invoice is emailed to the client straight away; otherwise it waits as a draft for you to check. The morning job needs the <code>REMINDER_KEY</code> set in Vercel (Company settings → Calendar & reminders). You can also create due invoices now.</div>' +
+      '<div class="grid g4"><div class="panel stat"><b>' + rs.filter(function (r) { return r.active; }).length + '</b><span>Active retainers</span></div><div class="panel stat"><b>' + R2(monthly) + '</b><span>Billed each month (excl. VAT)</span></div><div class="panel stat"><b>' + R2(monthly * 12) + '</b><span>A year of retainers</span></div><div class="panel stat"><b>' + invs.filter(function (i) { return invState(i).key === 'overdue'; }).length + '</b><span>Retainer invoices overdue</span></div></div>' +
+      '<div class="panel"><div class="hd"><h2>Retainers</h2><div style="display:flex;gap:8px"><button class="btn" data-act="run-retainers">Create due invoices now</button><button class="btn pri" data-act="new-retainer">New retainer</button></div></div><div class="tbl"><table><tr><th>Client</th><th>What it covers</th><th style="text-align:right">Monthly (excl. VAT)</th><th>Invoice day</th><th>Next invoice</th><th>Emailing</th><th>Status</th></tr>' +
+      (rs.map(function (r) { var n = retainerNext(r); return '<tr class="click" data-act="open-retainer" data-id="' + r.id + '"><td><b>' + esc(clientName(r.client_id)) + '</b></td><td>' + esc(r.description) + '</td><td class="mono" style="text-align:right">' + R2(r.amount) + '</td><td class="mono">' + r.day_of_month + '</td><td class="mono">' + (n ? fmt(n) : '—') + '</td><td>' + (r.email_auto ? pill('Automatic', 'p-green') : pill('Draft for review', 'p-gold')) + '</td><td>' + (r.active ? pill('Active', 'p-green') : pill('Paused', '')) + '</td></tr>'; }).join('') || '<tr><td colspan="7">' + empty('No retainers yet. Add one for each client on a monthly fee.') + '</td></tr>') + '</table></div></div>' +
+      (invs.length ? '<div class="panel"><div class="hd"><h2>Recent retainer invoices</h2></div><div class="tbl"><table><tr><th>No.</th><th>Client</th><th>Date</th><th style="text-align:right">Total</th><th>Status</th></tr>' + invs.map(function (i) { var s = invState(i); return '<tr class="click" data-act="open-doc" data-kind="invoice" data-id="' + i.id + '"><td class="mono">' + esc(i.number) + '</td><td>' + esc(clientName(i.client_id)) + '</td><td class="mono">' + fmt(i.issue_date) + '</td><td class="mono" style="text-align:right">' + R2(invTotal(i)) + '</td><td>' + pill(s.label, s.cls) + '</td></tr>'; }).join('') + '</table></div></div>' : '') +
+      (st.vat_registered ? '' : '<p class="meta">Retainer invoices add VAT only if you are VAT registered in Company settings.</p>');
+  }
+  function editRetainer(r, preset) {
+    var isNew = !r || !r.id;
+    openForm({
+      title: isNew ? 'New retainer' : 'Retainer: ' + clientName(r.client_id),
+      fields: [
+        { k: 'client_id', label: 'Client', type: 'select', req: true, blank: 'Choose a client', options: S.clients.map(function (c) { return [c.id, c.name]; }) },
+        { k: 'matter_id', label: 'Matter', type: 'select', blank: 'Not linked', options: S.matters.map(function (m) { return [m.id, m.ref + ' · ' + m.title]; }) },
+        { k: 'description', label: 'Line on the invoice', req: true, full: true, hint: 'The month is added automatically, e.g. “… · December 2026”.' },
+        { k: 'amount', label: 'Monthly fee (R, excl. VAT)', type: 'number', step: 0.01, req: true },
+        { k: 'day_of_month', label: 'Invoice on day (1–28)', type: 'number', step: 1, req: true },
+        { k: 'starts_on', label: 'First month from', type: 'date', req: true },
+        { k: 'ends_on', label: 'Last month (optional)', type: 'date' },
+        { k: 'email_auto', label: 'Email the invoice to the client automatically', type: 'checkbox' },
+        { k: 'active', label: 'Active', type: 'checkbox' },
+        { k: 'notes', label: 'Note shown on each invoice', type: 'textarea', full: true }
+      ],
+      values: r || Object.assign({ description: 'Monthly labour law retainer', day_of_month: 1, starts_on: ymd(today()), email_auto: true, active: true }, preset || {}),
+      save: async function (d) {
+        d.day_of_month = Math.round(Number(d.day_of_month));
+        if (!(d.day_of_month >= 1 && d.day_of_month <= 28)) return 'Choose an invoice day from 1 to 28.';
+        if (!(d.amount > 0)) return 'Enter the monthly fee.';
+        if (d.ends_on && d.ends_on < d.starts_on) return 'The last month is before the first.';
+        if (d.email_auto) { var c = byId(S.clients, d.client_id); if (c && !c.email) return 'This client has no email address. Add one, or untick automatic emailing.'; }
+        var q = isNew ? await sb.from('retainers').insert(d).select().single() : await sb.from('retainers').update(d).eq('id', r.id).select().single();
+        if (q.error) return dbErr(q);
+        upsertLocal(S.retainers, q.data); toast(isNew ? 'Retainer added' : 'Retainer saved'); render();
+      },
+      del: isNew ? null : async function () { var q = await sb.from('retainers').delete().eq('id', r.id); if (q.error) return dbErr(q); S.retainers = S.retainers.filter(function (x) { return x.id !== r.id; }); toast('Retainer deleted. Its invoices are kept.'); render(); }
+    });
+  }
+  P2['new-retainer'] = function (el) { if (!S.clients.length) { toast('Add a client first'); return; } editRetainer(null, el.dataset.client ? { client_id: el.dataset.client } : null); };
+  P2['open-retainer'] = function (el) { editRetainer(byId(S.retainers, el.dataset.id)); };
+  P2['run-retainers'] = async function (el) {
+    el.disabled = true;
+    var r = await sb.rpc('run_retainers'); el.disabled = false;
+    if (r.error) { toast(r.error.message); return; }
+    var n = (r.data || []).length;
+    if (n) { await refreshMoney(); var q = await sb.from('retainers').select('*'); if (!q.error) S.retainers = q.data; }
+    toast(n ? n + ' retainer invoice' + (n > 1 ? 's' : '') + ' created as draft. Open each to check and email it.' : 'No retainer invoices are due yet this month.'); render();
+  };
+
+  /* ----- Save an email attachment to the document centre ----- */
+  P2['mail-save'] = function (el) {
+    var msg = S.mail.msg; if (!msg) return; var a = msg.attachments[Number(el.dataset.idx)]; if (!a) return;
+    var from = ((msg.from[0] || {}).address || '').toLowerCase();
+    var c = S.clients.find(function (x) { return (x.email || '').toLowerCase() === from; });
+    var m = c && S.matters.find(function (x) { return x.client_id === c.id && x.stage !== 'Closed'; });
+    openForm({
+      title: 'Save attachment to documents', saveLabel: 'Save',
+      fields: [
+        { k: 'name', label: 'Name', req: true, full: true },
+        { k: 'folder', label: 'Folder', type: 'select', options: FOLDERS },
+        { k: 'matter_id', label: 'Matter', type: 'select', blank: 'Not linked', options: S.matters.map(function (x) { return [x.id, x.ref + ' · ' + x.title]; }) },
+        { k: 'client_id', label: 'Client', type: 'select', blank: 'Not linked', options: S.clients.map(function (x) { return [x.id, x.name]; }) }
+      ],
+      values: { name: a.filename, folder: 'Correspondence', matter_id: m ? m.id : '', client_id: c ? c.id : '' },
+      extra: '<p class="meta full" style="margin:0">From the email “' + esc(msg.subject) + '” · ' + fileSize(a.size) + (c ? ' · matched to client ' + esc(c.name) + ' by email address' : '') + '</p>',
+      save: async function (d) {
+        if (a.size > 26214400) return 'This file is larger than 25 MB. Save it from Outlook instead.';
+        $('mmsg').textContent = 'Saving…';
+        var j = await api('/api/mail', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save', uid: msg.uid, index: Number(el.dataset.idx), name: d.name, folder: d.folder, matter_id: d.matter_id || null, client_id: d.client_id || null }) });
+        if (j.error || !j.doc) return j.error || 'Could not save the attachment.';
+        S.docs.unshift(j.doc); toast('Saved to ' + d.folder + (d.matter_id ? ' on ' + ((byId(S.matters, d.matter_id) || {}).ref || 'the matter') : '')); render();
+      }
+    });
+  };
+
+  /* ----- Hearing outcome starts the 30-day CCMA clock ----- */
+  function dismissalClock(before, h) {
+    if (h.status !== 'finding_issued' || !/dismiss/i.test(h.sanction || '') || /not dismiss|no dismiss/i.test(h.sanction || '')) return;
+    if (before && before.status === 'finding_issued' && /dismiss/i.test(before.sanction || '')) return;
+    var forEmployee = h.our_role === 'employee_representative';
+    var title = forEmployee ? 'Refer the dismissal of ' + h.employee_name + ' to the CCMA / bargaining council (30 days, LRA s191(1)(b)(i))' : 'Last day for ' + h.employee_name + ' to refer the dismissal to the CCMA (30 days, LRA s191(1)(b)(i))';
+    setTimeout(function () {
+      openForm({
+        title: 'Start the 30-day CCMA clock?', saveLabel: 'Add the deadline',
+        fields: [{ k: 'dismissed_on', label: 'Date of dismissal', type: 'date', req: true, full: true, hint: 'The 30 days run from the date of dismissal, or the date the employer made a final decision to dismiss.' }],
+        values: { dismissed_on: ymd(today()) },
+        extra: '<p class="sub full" style="margin:0">' + (forEmployee ? 'You represent the employee, so this is your deadline to refer the dispute. A late referral needs a condonation application.' : 'The employee may refer an unfair dismissal dispute within 30 days. Knowing when that window closes tells you when the matter is likely settled, and when to expect a referral.') + '</p>',
+        save: async function (d) {
+          var due = ymd(addDays(D(d.dismissed_on), 30)), r;
+          if (h.matter_id) { r = await sb.from('deadlines').insert({ matter_id: h.matter_id, title: title, due_date: due }).select().single(); if (r.error) return dbErr(r); S.deadlines.push(r.data); S.deadlines.sort(function (a, b) { return a.due_date < b.due_date ? -1 : 1; }); }
+          else { r = await sb.from('tasks').insert({ title: title, due_date: due, client_id: h.client_id || null, assigned_to: S.user.email, priority: forEmployee ? 'high' : 'normal', status: 'open' }).select().single(); if (r.error) return dbErr(r); S.tasks.push(r.data); }
+          toast('Added: ' + fmt(due) + (h.matter_id ? ' in Deadlines' : ' as a task')); render();
+        }
+      });
+    }, 60);
+  }
+
+  /* ----- Compliance obligation turns into a quote ----- */
+  P2['compliance-quote'] = function (el) {
+    var c = byId(S.compliance, el.dataset.id); if (!c) return;
+    editDoc('quote', null, { client_id: c.client_id, notes: 'Scope: ' + c.obligation + (c.law ? ' (' + c.law + ')' : '') + ', due ' + fmt(c.due_date) + '. We prepare the documents, check them with you and submit them before the deadline.', _items: [{ description: c.obligation + ': preparation and submission', qty: 1, unit_price: (S.settings && S.settings.hourly_rate) || 0 }] });
+  };
+
+  /* ----- Monthly practice report ----- */
+  function monthBounds(key) { var p = key.split('-'); var a = new Date(+p[0], +p[1] - 1, 1); return [a, new Date(a.getFullYear(), a.getMonth() + 1, 1)]; }
+  function reportData(key) {
+    var b = monthBounds(key), inM = function (v) { var x = D(v); return x >= b[0] && x < b[1]; };
+    var leads = S.leads.filter(function (l) { return inM(l.created_at); }), src = {};
+    leads.forEach(function (l) { var k = l.source || 'Unknown'; src[k] = (src[k] || 0) + 1; });
+    var billed = S.invoices.filter(function (i) { return i.status !== 'cancelled' && inM(i.issue_date); }).reduce(function (s, i) { return s + invTotal(i); }, 0);
+    var od = S.invoices.filter(function (i) { return invState(i).key === 'overdue'; });
+    var up = S.deadlines.filter(function (d) { var n = daysLeft(d.due_date); return !d.done && n >= 0 && n <= 30; }).map(function (d) { return [d.due_date, d.title, (byId(S.matters, d.matter_id) || {}).ref]; })
+      .concat(S.compliance.filter(function (c) { var n = daysLeft(c.due_date); return c.status === 'open' && n >= 0 && n <= 30; }).map(function (c) { return [c.due_date, c.obligation + ' (' + clientName(c.client_id) + ')', '']; }))
+      .sort(function (x, y) { return x[0] < y[0] ? -1 : 1; }).slice(0, 15);
+    return {
+      label: b[0].toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' }), enquiries: leads.length, sources: Object.keys(src).map(function (k) { return [k, src[k]]; }).sort(function (x, y) { return y[1] - x[1]; }),
+      clients: leads.filter(function (l) { return l.client_id; }).length,
+      opened: S.matters.filter(function (m) { return inM(m.created_at); }).length,
+      closed: S.activity.filter(function (a) { return a.entity === 'matters' && a.action === 'stage' && /moved to Closed$/.test(a.summary || '') && inM(a.at || a.created_at); }).length,
+      open: S.matters.filter(function (m) { return m.stage !== 'Closed'; }).length,
+      billed: billed, received: S.payments.filter(function (p) { return p.account === 'business' && inM(p.received_on); }).reduce(function (s, p) { return s + Number(p.amount); }, 0),
+      trustIn: S.payments.filter(function (p) { return p.account === 'trust' && inM(p.received_on); }).reduce(function (s, p) { return s + Number(p.amount); }, 0),
+      overdue: od.length, overdueTotal: od.reduce(function (s, i) { return s + invState(i).bal; }, 0), upcoming: up
+    };
+  }
+  function reportView() {
+    var t = today(), keys = [];
+    for (var i = 0; i < 12; i++) { var x = new Date(t.getFullYear(), t.getMonth() - i, 1); keys.push(x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0')); }
+    var key = S.ui.repMonth || keys[1], r = reportData(key), st = S.settings || {};
+    var tabs = '<div class="subtabs">' + ['Practice', 'Sales', 'Website', 'Finance', 'Report'].map(function (x) { return '<button data-dashtab="' + x + '" class="' + (x === 'Report' ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    return head('Monthly report', 'Practice report: ' + esc(r.label), (st.monthly_report_enabled === false ? 'The automatic email is off.' : 'Partners get this by email on the 1st of each month.') + ' Change that in Company settings → Calendar & reminders.', '<select id="rep-month" style="max-width:200px">' + keys.map(function (k) { return '<option value="' + k + '"' + (k === key ? ' selected' : '') + '>' + monthBounds(k)[0].toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' }) + '</option>'; }).join('') + '</select><button class="btn pri" data-act="report-print">Print / PDF</button>') + tabs +
+      '<div class="grid g4"><div class="panel stat"><b>' + r.enquiries + '</b><span>New enquiries</span></div><div class="panel stat"><b>' + r.clients + '</b><span>Became clients</span></div><div class="panel stat"><b>' + r.opened + '</b><span>Matters opened</span></div><div class="panel stat"><b>' + r.closed + '</b><span>Matters closed</span></div></div>' +
+      '<div class="grid g4"><div class="panel stat"><b>' + R2(r.billed) + '</b><span>Fees billed</span></div><div class="panel stat"><b>' + R2(r.received) + '</b><span>Fees received</span></div><div class="panel stat"><b' + (r.overdue ? ' style="color:var(--red)"' : '') + '>' + R2(r.overdueTotal) + '</b><span>Overdue now (' + r.overdue + ' invoice' + (r.overdue === 1 ? '' : 's') + ')</span></div><div class="panel stat"><b>' + R2(r.trustIn) + '</b><span>Received into trust</span></div></div>' +
+      '<div class="grid g2"><div class="panel"><div class="hd"><h2>Where enquiries came from</h2></div>' + (r.sources.length ? r.sources.map(function (s) { var pc = Math.round(s[1] / r.enquiries * 100); return '<div style="display:flex;align-items:center;gap:10px;margin:8px 0"><span style="width:140px">' + esc(s[0]) + '</span><div style="flex:1;height:8px;border-radius:6px;background:var(--glass-3)"><div style="width:' + pc + '%;height:100%;border-radius:6px;background:var(--accent)"></div></div><span class="mono">' + s[1] + '</span></div>'; }).join('') : empty('No enquiries that month.')) + '</div>' +
+      '<div class="panel"><div class="hd"><h2>Time limits in the next 30 days</h2></div><div class="list">' + (r.upcoming.map(function (u) { return '<div class="row"><span class="mono" style="width:90px">' + fmt(u[0]) + '</span><div class="grow">' + esc(u[1]) + (u[2] ? ' <span class="meta">' + esc(u[2]) + '</span>' : '') + '</div></div>'; }).join('') || empty('Nothing due in the next 30 days.')) + '</div></div></div>' +
+      '<p class="meta">' + r.open + ' matters are open in total.</p>';
+  }
+  var _dashBase = V.dashboard;
+  V.dashboard = function () {
+    if ((S.ui.dashTab || 'Practice') === 'Report') return reportView();
+    return _dashBase().replace('<button data-dashtab="Finance" class="">Finance</button>', '<button data-dashtab="Finance" class="">Finance</button><button data-dashtab="Report" class="">Report</button>').replace('<button data-dashtab="Finance" class="on">Finance</button>', '<button data-dashtab="Finance" class="on">Finance</button><button data-dashtab="Report" class="">Report</button>');
+  };
+  document.addEventListener('change', function (e) { if (e.target.id === 'rep-month') { S.ui.repMonth = e.target.value; render(); } });
+  P2['report-print'] = function () {
+    var r = reportData(S.ui.repMonth || (function () { var x = new Date(today().getFullYear(), today().getMonth() - 1, 1); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0'); })());
+    var row = function (a, b) { return '<tr><td style="padding:6px 0;border-bottom:1px solid #e5e5e5">' + a + '</td><td align="right" style="padding:6px 0;border-bottom:1px solid #e5e5e5"><b>' + b + '</b></td></tr>'; };
+    printHtml(letterHtml('Practice report: ' + r.label, [
+      '<table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px">' + row('New enquiries', r.enquiries) + row('Became clients', r.clients) + row('Matters opened', r.opened) + row('Matters closed', r.closed) + row('Matters open now', r.open) + row('Fees billed', R2(r.billed)) + row('Fees received', R2(r.received)) + row('Received into trust', R2(r.trustIn)) + row('Overdue now', R2(r.overdueTotal) + ' (' + r.overdue + ')') + '</table>',
+      '<h3 style="font-family:Arial,sans-serif;font-size:14px;margin-top:22px">Where enquiries came from</h3><p>' + (r.sources.map(function (s) { return esc(s[0]) + ': ' + s[1]; }).join(' · ') || 'No enquiries.') + '</p>',
+      '<h3 style="font-family:Arial,sans-serif;font-size:14px;margin-top:22px">Time limits in the next 30 days</h3>' + (r.upcoming.length ? '<ul>' + r.upcoming.map(function (u) { return '<li>' + fmt(u[0]) + ': ' + esc(u[1]) + (u[2] ? ' (' + esc(u[2]) + ')' : '') + '</li>'; }).join('') + '</ul>' : '<p>Nothing due.</p>')
+    ], 'Prepared ' + fmt(today())));
+  };
+
+  /* ----- Two-step sign-in (authenticator app) ----- */
+  async function mfaSetup() {
+    var l = await sb.auth.mfa.listFactors(); if (l.error) { toast(l.error.message); return; }
+    var on = (l.data.totp || [])[0];
+    if (on) {
+      openForm({ title: 'Two-step sign-in', fields: [], saveLabel: 'Turn it off', extra: '<p class="sub full" style="margin:0">Two-step sign-in is <b>on</b> for your account. Each time you sign in, the CRM asks for the 6-digit code from your authenticator app. Turning it off makes your account easier to break into if your password leaks.</p>',
+        save: async function () { var u = await sb.auth.mfa.unenroll({ factorId: on.id }); if (u.error) return u.error.message; S.mfaStatus = null; toast('Two-step sign-in turned off'); render(); } });
+      return;
+    }
+    for (var i = 0; i < (l.data.all || []).length; i++) { var f = l.data.all[i]; if (f.status !== 'verified') await sb.auth.mfa.unenroll({ factorId: f.id }); }
+    var e = await sb.auth.mfa.enroll({ factorType: 'totp', friendlyName: 'CRM ' + new Date().toISOString().slice(0, 16) });
+    if (e.error) { toast(e.error.message); return; }
+    openForm({
+      title: 'Turn on two-step sign-in', saveLabel: 'Turn on',
+      fields: [{ k: 'code', label: '6-digit code from the app', req: true, full: true }],
+      extra: '<div class="fld full"><ol style="margin:0 0 10px;padding-left:20px;line-height:1.7"><li>Install Microsoft Authenticator or Google Authenticator on your phone.</li><li>In the app, add an account and scan this code.</li><li>Type the 6-digit code the app shows.</li></ol><img src="' + esc(e.data.totp.qr_code) + '" width="180" height="180" alt="QR code to scan" style="background:#fff;padding:8px;border-radius:12px"><div class="meta" style="margin-top:8px">Can’t scan it? Enter this key in the app instead: <code style="user-select:all">' + esc(e.data.totp.secret) + '</code></div></div>',
+      save: async function (d) {
+        var r = await sb.auth.mfa.challengeAndVerify({ factorId: e.data.id, code: String(d.code).replace(/\s/g, '') });
+        if (r.error) return 'That code did not work. Check that your phone’s time is set automatically and type the newest code.';
+        S.mfaStatus = null; toast('Two-step sign-in is on. You’ll be asked for a code each time you sign in.'); render();
+      }
+    });
+  }
+  function showMfa() {
+    show('login'); $('login-form').classList.add('hidden'); $('mfa-form').classList.remove('hidden'); $('mfa-msg').textContent = ''; $('mfa-code').value = ''; setTimeout(function () { $('mfa-code').focus(); }, 50);
+  }
+  function resetLogin() { $('mfa-form').classList.add('hidden'); $('login-form').classList.remove('hidden'); }
+  $('mfa-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var code = $('mfa-code').value.replace(/\s/g, ''), btn = e.target.querySelector('button[type=submit]');
+    if (!/^\d{6}$/.test(code)) { $('mfa-msg').textContent = 'Type the 6-digit code from your authenticator app.'; return; }
+    btn.disabled = true;
+    var l = await sb.auth.mfa.listFactors(), f = l.data && (l.data.totp || [])[0];
+    var r = f ? await sb.auth.mfa.challengeAndVerify({ factorId: f.id, code: code }) : { error: { message: 'No authenticator is set up for this account.' } };
+    btn.disabled = false;
+    if (r.error) { $('mfa-msg').textContent = /invalid|expired/i.test(r.error.message) ? 'That code did not work. Try the newest code in the app.' : r.error.message; return; }
+    resetLogin(); start();
+  });
+  $('mfa-cancel').addEventListener('click', async function () { await sb.auth.signOut(); resetLogin(); show('login'); });
+  async function needsMfa() {
+    if (!sb.auth.mfa) return false;
+    var a = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+    return !!(a.data && a.data.nextLevel === 'aal2' && a.data.currentLevel !== 'aal2');
+  }
+  function mfaPill(email) {
+    if (!S.mfaStatus) { S.mfaStatus = {}; sb.rpc('staff_mfa_status').then(function (r) { if (r.error || !r.data) return; r.data.forEach(function (x) { S.mfaStatus[(x.email || '').toLowerCase()] = x.enabled; }); if (onView('settings')) render(); }); }
+    var v = S.mfaStatus[(email || '').toLowerCase()];
+    return v === undefined ? '' : ' ' + (v ? pill('2-step on', 'p-green') : pill('2-step off', ''));
+  }
+
   /* ----- Shell: popovers, theme, sidebar ----- */
   function popover(html, anchor, cls) {
     closePop();
@@ -2054,7 +2415,7 @@ function renderNav(cur) {
     if ($('pop') && $('pop').dataset.kind === 'acct') { closePop(); return; }
     var dark = document.documentElement.dataset.theme !== 'light';
     var p = popover('<div style="display:flex;gap:10px;align-items:center;padding:10px 12px 8px"><span class="avatar">' + esc(initials()) + '</span><span style="min-width:0"><b style="display:block">' + esc((S.me && S.me.full_name) || (S.user && S.user.email) || '') + '</b><span class="meta">' + esc(S.user ? S.user.email : '') + '</span></span></div><hr>' +
-      menuItem('sun', 'My work', 'data-go="#mywork"') + menuItem(dark ? 'sun' : 'moon', dark ? 'Light theme' : 'Dark theme', 'data-shell="theme"') + menuItem('side', document.documentElement.classList.contains('mini') ? 'Expand sidebar' : 'Collapse sidebar', 'data-shell="side"') + menuItem('key', 'Set password', 'data-shell="pw"') + menuItem('cog', 'Company settings', 'data-go="#settings"') + '<hr>' + menuItem('out', 'Sign out', 'data-shell="out"'), anchor, 'menu');
+      menuItem('sun', 'My work', 'data-go="#mywork"') + menuItem(dark ? 'sun' : 'moon', dark ? 'Light theme' : 'Dark theme', 'data-shell="theme"') + menuItem('side', document.documentElement.classList.contains('mini') ? 'Expand sidebar' : 'Collapse sidebar', 'data-shell="side"') + menuItem('key', 'Set password', 'data-shell="pw"') + menuItem('shield', 'Two-step sign-in', 'data-shell="mfa"') + menuItem('cog', 'Company settings', 'data-go="#settings"') + '<hr>' + menuItem('out', 'Sign out', 'data-shell="out"'), anchor, 'menu');
     p.dataset.kind = 'acct';
   }
   $('avatar-btn').addEventListener('click', function (e) { e.stopPropagation(); accountMenu(this); });
@@ -2072,6 +2433,7 @@ function renderNav(cur) {
     if (a === 'theme') setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
     if (a === 'side') toggleSide();
     if (a === 'pw') $('setpw').click();
+    if (a === 'mfa') mfaSetup();
     if (a === 'out') $('logout').click();
   });
   if (/Mac|iPhone|iPad/.test(navigator.platform || '') === false) $('kbd-k').textContent = 'Ctrl K';
@@ -2233,6 +2595,7 @@ function renderNav(cur) {
   async function start() {
     var res = await sb.auth.getSession();
     if (!res.data.session) return show('login');
+    if (await needsMfa()) return showMfa();
     var ok = await sb.rpc('is_staff');
     if (ok.error || !ok.data) { await sb.auth.signOut(); $('login-msg').textContent = 'This account is not on the staff list. Ask the administrator to add you.'; return show('login'); }
     sb.rpc('link_staff');
@@ -2263,7 +2626,7 @@ function renderNav(cur) {
     openForm({ title: 'Set your password', fields: [{ k: 'pw', label: 'New password (at least 8 characters)', type: 'password', req: true, full: true }, { k: 'pw2', label: 'Repeat password', type: 'password', req: true, full: true }], saveLabel: 'Save password',
       save: async function (d) { if (d.pw.length < 8) return 'Use at least 8 characters.'; if (d.pw !== d.pw2) return 'The two passwords do not match.'; var r = await sb.auth.updateUser({ password: d.pw }); if (r.error) return r.error.message; toast('Password saved. You can now sign in with it.'); } });
   });
-  $('logout').addEventListener('click', async function () { await sb.auth.signOut(); S.user = null; show('login'); });
+  $('logout').addEventListener('click', async function () { await sb.auth.signOut(); S.user = null; resetLogin(); show('login'); });
   sb.auth.onAuthStateChange(function (event) { if (event === 'SIGNED_OUT') { S.user = null; show('login'); } });
   start();
 })();
