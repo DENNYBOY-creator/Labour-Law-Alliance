@@ -2,6 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "cleanUrls": true,
   "trailingSlash": false,
+  "crons": [
+    { "path": "/api/reminders", "schedule": "0 4 * * *" }
+  ],
   "redirects": [
     {
       "source": "/((?!api/).*)",
