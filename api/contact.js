@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { classify, hostOf } from './_source.js';
 // Vercel Serverless Function: receives both website forms and emails them via Resend (https://resend.com).
 // Required environment variables (Vercel → Project → Settings → Environment Variables):
 //   RESEND_API_KEY   your Resend API key
@@ -69,6 +70,14 @@ export default async function handler(req, res) {
   } catch {}
   if (page) rows.push(['Sent From Page', page]);
 
+  // How the visitor first found the site (sent by main.js from the start of their visit).
+  const visit = {
+    source: classify(clean(body.visit_ref, 500), clean(body.visit_us, 100), clean(body.visit_um, 100)),
+    referrer: hostOf(clean(body.visit_ref, 500)) || null,
+    landing: clean(body.visit_landing, 300).replace(/\.html$/, '') || null,
+  };
+  if (body.visit_ref !== undefined || body.visit_us) rows.push(['Found Us Via', visit.source + (visit.landing && visit.landing !== page ? ` (first page: ${visit.landing})` : '')]);
+
   const ref = randomUUID();
   const re = form === "booking" ? "Appointment Request" : form === "enquiry" ? "Consultation Enquiry" : "Contact Message";
   const intro = form === "booking"
@@ -81,7 +90,7 @@ export default async function handler(req, res) {
 
   // Save the lead in the CRM and email the office at the same time.
   // The visitor sees success if at least one of the two worked, so no enquiry is lost.
-  const [saved, emailed] = await Promise.all([saveLead(form, ref, d, page), sendEmail()]);
+  const [saved, emailed] = await Promise.all([saveLead(form, ref, d, page, body.visit_ref !== undefined || body.visit_us ? visit : null), sendEmail()]);
   if (!saved && !emailed) return res.status(502).json({ error: 'Could not send message.' });
   return res.status(200).json({ ok: true });
 
@@ -113,9 +122,10 @@ const SUPABASE_URL = 'https://ktsvmkfrrxuijmgjdbwr.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_E-C0YA_K3UpDWbbWqS9Lng__7pR26p9';
 const LEAD_FIELDS = ['first_name', 'last_name', 'email', 'phone', 'relationship', 'region', 'service', 'subject', 'message', 'preferred_date', 'preferred_time', 'meeting'];
 
-async function saveLead(form, ref, d, page) {
+async function saveLead(form, ref, d, page, visit) {
   const lead = { form, ref };
   if (page) { lead.page = page; lead.source = 'Website'; }
+  if (visit) { lead.source = visit.source; if (visit.referrer) lead.referrer = visit.referrer; if (visit.landing) lead.landing_page = visit.landing; }
   for (const k of LEAD_FIELDS) if (d[k]) lead[k] = d[k];
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
