@@ -140,12 +140,14 @@
       sb.from('tasks').select('*').order('due_date', { ascending: true, nullsFirst: false }),
       sb.from('activity').select('*').order('id', { ascending: false }).limit(300),
       sb.from('trust_entries').select('*').order('entry_date', { ascending: false }),
-      sb.from('retainers').select('*').order('created_at')
+      sb.from('retainers').select('*').order('created_at'),
+      sb.from('commissioners').select('*').order('name'),
+      sb.from('onboarding').select('id,created_at,created_by,token,client_id,matter_id,expires_at,opened_at,completed_at,accepted_name').order('created_at', { ascending: false })
     ]);
     var bad = res.find(function (r) { return r.error; });
     if (bad) { $('view').innerHTML = '<div class="callout p-red">Could not load data: ' + esc(bad.error.message) + '</div>'; return false; }
     S.leads = res[0].data; S.clients = res[1].data; S.matters = res[2].data; S.appts = res[3].data; S.deadlines = res[4].data;
-    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data; S.tasks = res[15].data; S.activity = res[16].data; S.trust = res[17].data; S.retainers = res[18].data;
+    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data; S.tasks = res[15].data; S.activity = res[16].data; S.trust = res[17].data; S.retainers = res[18].data; S.commissioners = res[19].data; S.onboarding = res[20].data;
     S.me = S.staff.find(function (s) { return S.user && (s.email || '').toLowerCase() === (S.user.email || '').toLowerCase(); }) || {};
     return true;
   }
@@ -189,6 +191,7 @@ var NAV = [
   { id: 'matters', label: 'Matters', ic: 'brief', n: function () { return S.matters.filter(function (m) { return m.stage !== 'Closed'; }).length; } },
   { id: 'hearings', label: 'Hearings', ic: 'gavel', n: function () { return S.hearings.filter(function (h) { return h.status === 'scheduled' && h.starts_at && daysLeft(h.starts_at) >= 0 && daysLeft(h.starts_at) <= 7; }).length; } },
   { id: 'clients', label: 'Clients', ic: 'users' },
+  { id: 'commissioners', label: 'Commissioners', ic: 'gavel' },
   { grp: 'Money' },
   { id: 'quotes', label: 'Quotes & invoices', ic: 'doc', n: function () { return S.invoices.filter(function (i) { return invState(i).key === 'overdue'; }).length; }, hot: true },
   { id: 'payments', label: 'Payments', ic: 'wallet' },
@@ -422,12 +425,13 @@ function renderNav(cur) {
     });
   }
   function matterDetail(m) {
-    var tabs = ['Overview', 'Tasks', 'Deadlines', 'File notes', 'Appointments', 'Time', 'Hearings', 'Billing', 'Documents', 'Emails', 'History'];
+    var tabs = ['Overview', 'Tasks', 'Deadlines', 'File notes', 'Appointments', 'Time', 'Hearings', 'Billing', 'Calculator', 'Documents', 'Emails', 'History'];
     var t = S.ui.matterTab, si = STAGES.indexOf(m.stage), r = m.key_rule && rule(m.key_rule), c = byId(S.clients, m.client_id);
     var body = '';
     if (t === 'Overview') body = '<div class="grid g2"><dl class="kv"><dt>Client</dt><dd>' + (c ? '<a href="#" data-client="' + c.id + '">' + esc(c.name) + '</a>' : '—') + '</dd><dt>We act for</dt><dd>' + esc(m.acting_for) + '</dd><dt>Other party</dt><dd>' + esc(m.other_party || '—') + '</dd><dt>Type</dt><dd>' + esc(m.dispute_type || '—') + '</dd><dt>Forum</dt><dd>' + esc(m.forum || '—') + '</dd><dt>Case number</dt><dd>' + esc(m.case_no || '—') + '</dd><dt>Attorney</dt><dd>' + esc(m.attorney || '—') + '</dd><dt>Opened</dt><dd>' + fmt(m.created_at) + '</dd></dl>' +
       '<dl class="kv"><dt>What the client wants</dt><dd>' + esc(m.value_sought || '—') + '</dd><dt>Fee arrangement</dt><dd>' + esc(m.fee_arrangement || '—') + '</dd><dt>Next step</dt><dd>' + (m.next_date ? esc(m.next_step || '') + ', ' + fmt(m.next_date) + ' ' + urg(daysLeft(m.next_date)) : esc(m.next_step || '—')) + '</dd>' +
       (r && m.key_date ? '<dt>Time limit</dt><dd>' + esc(r.label) + ': <b>' + fmt(r.calc(D(m.key_date))) + '</b> ' + urg(daysLeft(r.calc(D(m.key_date)))) + '<div class="meta">' + r.span + ' from ' + fmt(m.key_date) + ' · ' + r.law + '</div></dd>' : '') +
+      (m.commissioner_id || m.outcome ? '<dt>Commissioner</dt><dd>' + (byId(S.commissioners, m.commissioner_id) ? '<a href="#" data-act="open-commissioner" data-id="' + m.commissioner_id + '">' + esc(byId(S.commissioners, m.commissioner_id).name) + '</a>' : '—') + '</dd><dt>Outcome</dt><dd>' + (m.outcome ? pill(lbl(OUTCOMES, m.outcome), OCLS[m.outcome]) + (m.outcome_date ? ' ' + fmt(m.outcome_date) : '') + (m.award_amount ? ' · ' + R2(m.award_amount) : '') : 'Not decided yet') + '</dd>' : '') +
       '<dt>Background</dt><dd>' + esc(m.notes || '—') + '</dd></dl></div>' + (c ? '<div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap">' + phoneLinks(c.phone, c.email, m.ref + ' – ' + m.title) + '</div>' : '');
     if (t === 'Deadlines') {
       var ds = S.deadlines.filter(function (d) { return d.matter_id === m.id; });
@@ -449,7 +453,8 @@ function renderNav(cur) {
     if (t === 'Tasks') body = '<div style="margin-bottom:10px"><button class="btn pri" data-act="new-task" data-matter="' + m.id + '">New task</button></div>' + taskList(S.tasks.filter(function (x) { return x.matter_id === m.id; }), true);
     if (t === 'History') body = historyList(S.activity.filter(function (a) { return a.matter_id === m.id; }), 'matter', m.id);
     if (t === 'Hearings') body = matterHearings(m);
-    if (t === 'Billing') body = matterBilling(m);
+    if (t === 'Billing') body = profitStrip(m) + matterBilling(m);
+    if (t === 'Calculator') body = matterCalc(m);
     if (t === 'Documents') body = matterDocs(m);
     return '<div><a href="#matters">← All matters</a></div>' + head(esc(m.ref) + (m.forum ? ' · ' + esc(m.forum) : ''), esc(m.title), esc(m.dispute_type || '') + ' · acting for the ' + esc(m.acting_for), '<button class="btn pri" data-act="edit-matter" data-id="' + m.id + '">Edit matter</button>') +
       '<div class="panel"><div class="meta" style="margin-bottom:6px">Stage (click to move)</div><div class="steps">' + STAGES.map(function (s, i) { return '<button data-stage="' + esc(s) + '" class="' + (i < si ? 'done' : i === si ? 'now' : '') + '">' + s + '</button>'; }).join('') + '</div></div>' +
@@ -987,10 +992,11 @@ function renderNav(cur) {
   };
   V.settings = function () {
     var tab = S.ui.sTab || 'Company details', st = S.settings || {};
-    var tabs = '<div class="subtabs">' + ['Company details', 'Banking & invoicing', 'Users', 'Email', 'Calendar & reminders', 'Integrations'].map(function (x) { return '<button data-stab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    var tabs = '<div class="subtabs">' + ['Company details', 'Banking & invoicing', 'Users', 'Email', 'Calendar & reminders', 'Integrations', 'POPIA'].map(function (x) { return '<button data-stab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
     var canEdit = canMoney();
     var body;
-    if (tab === 'Calendar & reminders') body = calendarSettings();
+    if (tab === 'POPIA') body = popiaSettings();
+    else if (tab === 'Calendar & reminders') body = calendarSettings();
     else if (tab === 'Email' || tab === 'Integrations') body = settings3(tab);
     else if (tab === 'Users') {
       body = '<div class="panel"><div class="hd"><h2>People with access</h2>' + (isPartner() ? '<button class="btn pri" data-act="invite-staff">Invite staff member</button>' : '') + '</div><div class="tbl"><table><tr><th>Name</th><th>Email</th><th>Role</th><th>Signed in before</th><th>Access</th><th></th></tr>' +
@@ -1869,7 +1875,7 @@ function renderNav(cur) {
     var hs = S.hearings.filter(function (h) { return h.client_id === c.id || mids.indexOf(h.matter_id) >= 0; });
     var docs = S.docs.filter(function (d) { return d.client_id === c.id || mids.indexOf(d.matter_id) >= 0; });
     var ts = S.tasks.filter(function (t) { return t.client_id === c.id || mids.indexOf(t.matter_id) >= 0; });
-    var tabs = ['Timeline', 'Matters', 'Money', 'Documents', 'Appointments & hearings', 'Tasks', 'Emails'];
+    var tabs = ['Timeline', 'Matters', 'Money', 'Documents', 'Appointments & hearings', 'Tasks', 'Emails', 'POPIA'];
     var body = '';
     if (tab === 'Timeline') {
       var items = [];
@@ -1896,10 +1902,11 @@ function renderNav(cur) {
     if (tab === 'Appointments & hearings') body = '<div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn pri" data-act="new-appt-client" data-client="' + c.id + '">New appointment</button></div><div class="list">' + (appts.slice().sort(function (a, b) { return D(b.starts_at) - D(a.starts_at); }).map(function (a) { return '<div class="row" style="align-items:center">' + dateBox(a.starts_at) + '<div class="grow"><b>' + esc(a.title) + '</b><div class="meta">' + fmtT(a.starts_at) + ' · ' + kindLabel(a.kind) + (a.location ? ' · ' + esc(a.location) : '') + '</div></div>' + pill(a.status) + '<button class="btn sm" data-appt="' + a.id + '">Open</button></div>'; }).join('') || empty('No appointments.')) + '</div>' + (hs.length ? '<h3 style="margin:16px 0 6px">Hearings</h3>' + hearingRows(hs) : '');
     if (tab === 'Tasks') body = '<div style="margin-bottom:10px"><button class="btn pri" data-act="new-task" data-client="' + c.id + '">New task</button></div>' + taskList(ts);
     if (tab === 'Emails') body = clientEmails(c);
+    if (tab === 'POPIA') body = clientPopia(c);
     return '<div><a href="#clients">← All clients</a></div>' + head({ individual: 'Individual', employer: 'Employer', union: 'Trade union' }[c.kind] + (c.id_or_reg_no ? ' · ' + esc(c.id_or_reg_no) : ''), esc(c.name), [c.contact_person, c.phone, c.email, c.address].filter(Boolean).map(esc).join(' · '), '<button class="btn pri" data-act="edit-client" data-id="' + c.id + '">Edit client</button>') +
       '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' + phoneLinks(c.phone, c.email) + pill('FICA: ' + { done: 'done', partial: 'partial', outstanding: 'outstanding' }[c.fica_status], c.fica_status === 'done' ? 'p-green' : 'p-amber') + pill(c.popia_consent ? 'POPIA signed' : 'POPIA outstanding', c.popia_consent ? 'p-green' : 'p-red') + (c.fee_plan ? pill(c.fee_plan) : '') + '</div>' +
       '<div class="grid g4"><div class="panel stat"><b>' + ms.filter(function (m) { return m.stage !== 'Closed'; }).length + '</b><span>Open matters (' + ms.length + ' in total)</span></div><div class="panel stat"><b' + (owed ? ' style="color:var(--red)"' : '') + '>' + R2(owed) + '</b><span>Owed</span></div><div class="panel stat"><b>' + R2(trustBal(c.id)) + '</b><span>Held in trust</span></div><div class="panel stat"><b>' + ts.filter(function (t) { return t.status === 'open'; }).length + '</b><span>Open tasks</span></div></div>' +
-      conflictPanel(c.name, { client: c.id, lead: c.lead_id }) +
+      conflictPanel(c.name, { client: c.id, lead: c.lead_id }) + (c.anonymised_at ? '' : onboardPanel(c)) +
       '<div class="panel"><div class="tabs" role="tablist">' + tabs.map(function (x) { return '<button role="tab" class="' + (x === tab ? 'on' : '') + '" data-ctab="' + x + '">' + x + '</button>'; }).join('') + '</div><div style="padding-top:14px">' + body + '</div></div>';
   }
   function clientEmails(c) {
@@ -2323,7 +2330,7 @@ function renderNav(cur) {
     var t = today(), keys = [];
     for (var i = 0; i < 12; i++) { var x = new Date(t.getFullYear(), t.getMonth() - i, 1); keys.push(x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0')); }
     var key = S.ui.repMonth || keys[1], r = reportData(key), st = S.settings || {};
-    var tabs = '<div class="subtabs">' + ['Practice', 'Sales', 'Website', 'Finance', 'Report'].map(function (x) { return '<button data-dashtab="' + x + '" class="' + (x === 'Report' ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    var tabs = '<div class="subtabs">' + ['Practice', 'Sales', 'Website', 'Finance', 'Report', 'Profit'].map(function (x) { return '<button data-dashtab="' + x + '" class="' + (x === 'Report' ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
     return head('Monthly report', 'Practice report: ' + esc(r.label), (st.monthly_report_enabled === false ? 'The automatic email is off.' : 'Partners get this by email on the 1st of each month.') + ' Change that in Company settings → Calendar & reminders.', '<select id="rep-month" style="max-width:200px">' + keys.map(function (k) { return '<option value="' + k + '"' + (k === key ? ' selected' : '') + '>' + monthBounds(k)[0].toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' }) + '</option>'; }).join('') + '</select><button class="btn pri" data-act="report-print">Print / PDF</button>') + tabs +
       '<div class="grid g4"><div class="panel stat"><b>' + r.enquiries + '</b><span>New enquiries</span></div><div class="panel stat"><b>' + r.clients + '</b><span>Became clients</span></div><div class="panel stat"><b>' + r.opened + '</b><span>Matters opened</span></div><div class="panel stat"><b>' + r.closed + '</b><span>Matters closed</span></div></div>' +
       '<div class="grid g4"><div class="panel stat"><b>' + R2(r.billed) + '</b><span>Fees billed</span></div><div class="panel stat"><b>' + R2(r.received) + '</b><span>Fees received</span></div><div class="panel stat"><b' + (r.overdue ? ' style="color:var(--red)"' : '') + '>' + R2(r.overdueTotal) + '</b><span>Overdue now (' + r.overdue + ' invoice' + (r.overdue === 1 ? '' : 's') + ')</span></div><div class="panel stat"><b>' + R2(r.trustIn) + '</b><span>Received into trust</span></div></div>' +
@@ -2396,6 +2403,296 @@ function renderNav(cur) {
     var v = S.mfaStatus[(email || '').toLowerCase()];
     return v === undefined ? '' : ' ' + (v ? pill('2-step on', 'p-green') : pill('2-step off', ''));
   }
+
+  /* =====================================================================
+     PHASE 6: settlement calculator, commissioners, POPIA tools,
+     client onboarding links, profit per matter
+     ===================================================================== */
+
+  /* ----- Settlement and compensation calculator (LRA s194, BCEA s37, s40, s41) ----- */
+  var CALC_TYPES = [
+    ['ud', 'Unfair dismissal (misconduct or incapacity)', 12, 'LRA s194(1)'],
+    ['auto', 'Automatically unfair dismissal', 24, 'LRA s194(3)'],
+    ['ret', 'Retrenchment (operational requirements)', 12, 'LRA s194(1), BCEA s41'],
+    ['ulp', 'Unfair labour practice', 12, 'LRA s194(4)']
+  ];
+  function calcDefaults(m) {
+    var t = /auto/i.test(m.dispute_type || '') ? 'auto' : /retrench|s189/i.test(m.dispute_type || '') ? 'ret' : /practice/i.test(m.dispute_type || '') ? 'ulp' : 'ud';
+    return { type: t, monthly: '', start: '', end: m.key_rule === 'ud' && m.key_date ? m.key_date : '', leave: '', other: '', months: 3, special: false, noticeDone: false };
+  }
+  function calcRun(v) {
+    var monthly = Number(v.monthly) || 0, weekly = monthly * 12 / 52, daily = monthly / 21.67;
+    var s = v.start ? D(v.start) : null, e = v.end ? D(v.end) : today();
+    var months = s ? (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth()) - (e.getDate() < s.getDate() ? 1 : 0) : 0;
+    var years = Math.max(0, Math.floor(months / 12));
+    var noticeWeeks = !s ? 0 : months < 6 ? 1 : (months < 12 && !v.special) ? 2 : 4;
+    var type = CALC_TYPES.find(function (x) { return x[0] === v.type; }) || CALC_TYPES[0];
+    var notice = v.noticeDone ? 0 : round2(weekly * noticeWeeks);
+    var sev = v.type === 'ret' ? round2(weekly * years) : 0;
+    var leave = round2(daily * (Number(v.leave) || 0));
+    var other = round2(Number(v.other) || 0);
+    var capM = type[2], comp = round2(monthly * Math.min(Number(v.months) || 0, capM));
+    var statutory = round2(notice + sev + leave + other);
+    return { monthly: monthly, weekly: round2(weekly), daily: round2(daily), months: months, years: years, noticeWeeks: noticeWeeks, notice: notice, sev: sev, leave: leave, other: other, capM: capM, cap: round2(monthly * capM), comp: comp, statutory: statutory, total: round2(statutory + comp), type: type };
+  }
+  function calcText(m, v, r) {
+    return 'Settlement calculation (' + fmt(today()) + ')\n' + r.type[1] + ' · ' + r.type[3] + '\nMonthly pay ' + R2(r.monthly) + ' · service ' + Math.floor(r.months / 12) + ' years ' + (r.months % 12) + ' months\n' +
+      (r.notice ? 'Notice pay (' + r.noticeWeeks + ' weeks, BCEA s37): ' + R2(r.notice) + '\n' : '') + (r.sev ? 'Severance pay (' + r.years + ' weeks, BCEA s41): ' + R2(r.sev) + '\n' : '') + (r.leave ? 'Leave pay (' + (Number(v.leave) || 0) + ' days, BCEA s40): ' + R2(r.leave) + '\n' : '') + (r.other ? 'Other amounts owed: ' + R2(r.other) + '\n' : '') +
+      'Amounts due regardless: ' + R2(r.statutory) + '\nCompensation: ' + (Number(v.months) || 0) + ' months = ' + R2(r.comp) + ' (maximum ' + r.capM + ' months = ' + R2(r.cap) + ')\nProposed settlement: ' + R2(r.total);
+  }
+  function matterCalc(m) {
+    S.ui.calc = S.ui.calc || {}; var v = S.ui.calc[m.id] = S.ui.calc[m.id] || calcDefaults(m), r = calcRun(v);
+    var inp = function (k, label, type, extra) { return '<div class="fld"><label for="cx-' + k + '">' + label + '</label><input id="cx-' + k + '" data-cx="' + k + '" type="' + type + '" value="' + esc(v[k]) + '"' + (extra || '') + '></div>'; };
+    var line = function (a, b, note) { return '<div class="row" style="align-items:center"><div class="grow">' + a + (note ? '<div class="meta">' + note + '</div>' : '') + '</div><b class="mono">' + b + '</b></div>'; };
+    return '<div class="grid g2"><div><form class="f" id="calc-form" onsubmit="return false">' +
+      '<div class="fld full"><label for="cx-type">Type of dispute</label><select id="cx-type" data-cx="type">' + CALC_TYPES.map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === v.type ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select></div>' +
+      inp('monthly', 'Monthly pay before deductions (R)', 'number', ' step="100" min="0"') + inp('leave', 'Leave days still owed', 'number', ' step="0.5" min="0"') +
+      inp('start', 'Started work on', 'date') + inp('end', 'Dismissal date', 'date') +
+      inp('other', 'Other amounts owed (R)', 'number', ' step="100" min="0"') +
+      '<div class="fld"><label for="cx-months">Months of compensation: <b id="cx-mv">' + v.months + '</b> of ' + r.capM + '</label><input id="cx-months" data-cx="months" type="range" min="0" max="' + r.capM + '" step="1" value="' + Math.min(v.months, r.capM) + '"></div>' +
+      '<label class="check full" style="font-weight:400"><input type="checkbox" data-cx="noticeDone"' + (v.noticeDone ? ' checked' : '') + '> Notice was already worked or paid</label>' +
+      '<label class="check full" style="font-weight:400"><input type="checkbox" data-cx="special"' + (v.special ? ' checked' : '') + '> Farm or domestic worker (4 weeks’ notice after 6 months)</label>' +
+      '</form></div><div id="calc-out">' + calcOut(m, v, r) + '</div></div>';
+  }
+  function calcOut(m, v, r) {
+    var line = function (a, b, note) { return '<div class="row" style="align-items:center"><div class="grow">' + a + (note ? '<div class="meta">' + note + '</div>' : '') + '</div><b class="mono">' + b + '</b></div>'; };
+    return '<div class="panel" style="margin:0;padding:16px">' +
+      line('Weekly / daily pay', R2(r.weekly) + ' / ' + R2(r.daily), 'Monthly × 12 ÷ 52, and monthly ÷ 21.67 working days') +
+      line('Length of service', Math.floor(r.months / 12) + ' y ' + (r.months % 12) + ' m') +
+      line('Notice pay', R2(r.notice), r.noticeWeeks ? r.noticeWeeks + ' weeks (BCEA s37)' + (v.noticeDone ? ', already worked or paid' : '') : 'Add the start date') +
+      (v.type === 'ret' ? line('Severance pay', R2(r.sev), r.years + ' completed year' + (r.years === 1 ? '' : 's') + ' × 1 week (BCEA s41)') : '') +
+      line('Leave pay', R2(r.leave), 'Days owed × daily pay (BCEA s40)') + (r.other ? line('Other amounts owed', R2(r.other)) : '') +
+      line('<b>Due regardless of fairness</b>', R2(r.statutory)) +
+      line('Compensation', R2(r.comp), (Number(v.months) || 0) + ' months. Maximum ' + r.capM + ' months = ' + R2(r.cap) + ' (' + r.type[3] + ')') +
+      '<div class="row" style="align-items:center;border-top:1px solid var(--line-2);margin-top:6px;padding-top:12px"><div class="grow"><b>Proposed settlement</b></div><b class="mono" style="font-size:22px;color:var(--accent)">' + R2(r.total) + '</b></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn pri" data-act="calc-note" data-matter="' + m.id + '">Save to file notes</button><button class="btn" data-act="calc-copy" data-matter="' + m.id + '">Copy</button></div></div>' +
+      '<p class="meta" style="margin-top:10px">A guide for negotiation, not advice. Compensation must be “just and equitable” and is often lower where only the procedure was unfair. Severance and compensation are taxed as a lump sum by SARS. Check the employee’s remuneration includes regular allowances and benefits.</p>';
+  }
+  document.addEventListener('input', function (e) {
+    var k = e.target.dataset && e.target.dataset.cx; if (!k) return;
+    var id = location.hash.indexOf('#matter=') === 0 ? location.hash.slice(8) : null; if (!id || !S.ui.calc || !S.ui.calc[id]) return;
+    var v = S.ui.calc[id], m = byId(S.matters, id);
+    v[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+    if (k === 'type') { var r0 = calcRun(v); v.months = Math.min(Number(v.months) || 0, r0.capM); render(); return; }
+    var r = calcRun(v);
+    if (k === 'months') { var mv = $('cx-mv'); if (mv) mv.textContent = e.target.value; }
+    var out = $('calc-out'); if (out) out.innerHTML = calcOut(m, v, r);
+  });
+  document.addEventListener('change', function (e) { if (e.target.dataset && e.target.dataset.cx && (e.target.tagName === 'SELECT' || e.target.type === 'checkbox')) e.target.dispatchEvent(new Event('input', { bubbles: true })); });
+  P2['calc-note'] = async function (el) {
+    var m = byId(S.matters, el.dataset.matter), v = S.ui.calc[m.id], r = calcRun(v);
+    if (!r.monthly) { toast('Enter the monthly pay first.'); return; }
+    var q = await sb.from('matter_notes').insert({ matter_id: m.id, body: calcText(m, v, r) }).select().single();
+    if (q.error) { toast(q.error.message); return; }
+    if (S.notes[m.id]) S.notes[m.id].unshift(q.data); toast('Saved to file notes');
+  };
+  P2['calc-copy'] = function (el) { var m = byId(S.matters, el.dataset.matter), v = S.ui.calc[m.id]; navigator.clipboard.writeText(calcText(m, v, calcRun(v))).then(function () { toast('Copied'); }, function () { toast('Could not copy'); }); };
+
+  /* ----- Commissioners, arbitrators and judges ----- */
+  var OUTCOMES = [['won', 'Won'], ['partly_won', 'Partly won'], ['settled', 'Settled'], ['lost', 'Lost'], ['withdrawn', 'Withdrawn']];
+  var OCLS = { won: 'p-green', partly_won: 'p-green', settled: 'p-blue', lost: 'p-red', withdrawn: '' };
+  function commStats(id) {
+    var ms = S.matters.filter(function (m) { return m.commissioner_id === id; }), done = ms.filter(function (m) { return m.outcome; });
+    var good = done.filter(function (m) { return m.outcome === 'won' || m.outcome === 'partly_won'; }).length, decided = done.filter(function (m) { return m.outcome !== 'withdrawn' && m.outcome !== 'settled'; }).length;
+    return { ms: ms, done: done, good: good, decided: decided, rate: decided ? Math.round(good / decided * 100) : null, awards: done.filter(function (m) { return m.award_amount; }) };
+  }
+  V.commissioners = function () {
+    var q = (S.ui.commQ || '').toLowerCase();
+    var list = S.commissioners.filter(function (c) { return !q || (c.name + ' ' + (c.region || '') + ' ' + (c.forum || '')).toLowerCase().indexOf(q) >= 0; }).sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+    return head('Practice', 'Commissioners and arbitrators', 'Who heard each matter, how it went and what you learned. Check a commissioner’s record here before the next set-down.', '<button class="btn pri" data-act="new-commissioner">Add commissioner</button>') +
+      '<input type="search" id="comm-q" placeholder="Search by name, forum or region" value="' + esc(S.ui.commQ || '') + '" style="margin-bottom:12px">' +
+      '<div class="panel"><div class="tbl"><table><tr><th>Name</th><th>Forum</th><th>Region</th><th>Matters</th><th>Our results</th><th>Win rate</th><th>Notes</th></tr>' +
+      (list.map(function (c) { var s = commStats(c.id); return '<tr class="click" data-act="open-commissioner" data-id="' + c.id + '"><td><b>' + esc(c.name) + '</b></td><td>' + esc(c.forum || '—') + '</td><td>' + esc(c.region || '—') + '</td><td class="mono">' + s.ms.length + '</td><td>' + OUTCOMES.map(function (o) { var n = s.done.filter(function (m) { return m.outcome === o[0]; }).length; return n ? pill(o[1] + ' ' + n, OCLS[o[0]]) : ''; }).join(' ') + '</td><td class="mono">' + (s.rate === null ? '—' : s.rate + '%') + '</td><td class="meta" style="max-width:280px">' + esc((c.notes || '').slice(0, 120)) + '</td></tr>'; }).join('') || '<tr><td colspan="7">' + empty('No commissioners yet. Add one, or pick one when you edit a matter.') + '</td></tr>') + '</table></div></div>' +
+      '<p class="meta">Win rate counts matters that were decided (won, partly won or lost), not settlements or withdrawals.</p>';
+  };
+  document.addEventListener('input', function (e) { if (e.target.id !== 'comm-q') return; S.ui.commQ = e.target.value; clearTimeout(S.commT); S.commT = setTimeout(function () { render(); var n = $('comm-q'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }, 300); });
+  function editCommissioner(c, after) {
+    var isNew = !c || !c.id, s = isNew ? null : commStats(c.id);
+    openForm({
+      title: isNew ? 'Add commissioner' : c.name,
+      fields: [{ k: 'name', label: 'Name', req: true }, { k: 'forum', label: 'Forum', type: 'select', blank: 'Choose…', options: ['CCMA', 'Bargaining council', 'Labour Court', 'Private arbitration'] }, { k: 'region', label: 'Region or office', ph: 'e.g. CCMA Johannesburg' }, { k: 'notes', label: 'What to know', type: 'textarea', full: true, ph: 'e.g. Strict on bundles being paginated; pushes hard for settlement at con-arb; gives short postponements only with an affidavit.' }],
+      values: c || {},
+      extra: isNew ? '' : '<div class="fld full"><span class="lbl">Matters heard</span>' + (s.ms.map(function (m) { return '<div><a href="#matter=' + m.id + '" data-close>' + esc(m.ref + ' · ' + m.title) + '</a> ' + (m.outcome ? pill(lbl(OUTCOMES, m.outcome), OCLS[m.outcome]) : stagePill(m.stage)) + (m.award_amount ? ' <span class="meta">' + R2(m.award_amount) + '</span>' : '') + '</div>'; }).join('') || '<span class="meta">None linked yet.</span>') + '</div>',
+      save: async function (d) {
+        var r = isNew ? await sb.from('commissioners').insert(d).select().single() : await sb.from('commissioners').update(d).eq('id', c.id).select().single();
+        if (r.error) return dbErr(r); upsertLocal(S.commissioners, r.data); toast(isNew ? 'Commissioner added' : 'Saved'); if (after) after(r.data); render();
+      },
+      del: isNew ? null : async function () { var r = await sb.from('commissioners').delete().eq('id', c.id); if (r.error) return dbErr(r); S.commissioners = S.commissioners.filter(function (x) { return x.id !== c.id; }); toast('Deleted. Matters keep their outcomes.'); render(); }
+    });
+  }
+  P2['new-commissioner'] = function () { editCommissioner(null); };
+  P2['open-commissioner'] = function (el) { editCommissioner(byId(S.commissioners, el.dataset.id)); };
+  var _matterFields = matterFields;
+  matterFields = function () {
+    var f = _matterFields(), i = f.findIndex(function (x) { return x.k === 'notes'; });
+    f.splice(i, 0,
+      { k: 'commissioner_id', label: 'Commissioner / arbitrator / judge', type: 'select', blank: 'Not yet known', options: S.commissioners.slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; }).map(function (c) { return [c.id, c.name + (c.region ? ' · ' + c.region : '')]; }), hint: '<a href="#" data-act="quick-commissioner">+ Add a commissioner</a>' },
+      { k: 'outcome', label: 'Outcome', type: 'select', blank: 'Not decided yet', options: OUTCOMES },
+      { k: 'outcome_date', label: 'Outcome date', type: 'date' },
+      { k: 'award_amount', label: 'Award or settlement amount (R)', type: 'number', step: 0.01 });
+    return f;
+  };
+  P2['quick-commissioner'] = function () {
+    var form = $('mform'); var keep = {}; if (form) form.querySelectorAll('input,select,textarea').forEach(function (x) { if (x.id) keep[x.id] = x.type === 'checkbox' ? x.checked : x.value; });
+    var title = document.querySelector('.modal h2') ? document.querySelector('.modal h2').textContent : '';
+    var m = /^Edit /.test(title) ? S.matters.find(function (x) { return 'Edit ' + x.ref === title; }) : null;
+    editCommissioner(null, function (c) { setTimeout(function () { editMatter(m ? Object.assign({}, m, readKept(keep), { commissioner_id: c.id }) : Object.assign(readKept(keep), { commissioner_id: c.id })); }, 80); });
+  };
+  function readKept(k) { var o = {}; Object.keys(k).forEach(function (id) { if (id.indexOf('m-') === 0) o[id.slice(2)] = k[id]; }); return o; }
+
+  /* ----- POPIA: export, access log, retention ----- */
+  function clientBundle(c) {
+    var ms = S.matters.filter(function (m) { return m.client_id === c.id; }), mids = ms.map(function (m) { return m.id; });
+    var by = function (arr) { return arr.filter(function (x) { return x.client_id === c.id || mids.indexOf(x.matter_id) >= 0; }); };
+    return { exported_at: new Date().toISOString(), exported_by: S.user && S.user.email, firm: (S.settings || {}).trading_name, client: c, enquiries: S.leads.filter(function (l) { return l.client_id === c.id; }), matters: ms, appointments: by(S.appts), hearings: by(S.hearings), deadlines: S.deadlines.filter(function (d) { return mids.indexOf(d.matter_id) >= 0; }), tasks: by(S.tasks), quotes: S.quotes.filter(function (q) { return q.client_id === c.id; }), invoices: S.invoices.filter(function (i) { return i.client_id === c.id; }).map(function (i) { return Object.assign({}, i, { items: itemsOf('invoice', i.id) }); }), payments: S.payments.filter(function (p) { return p.client_id === c.id; }), trust: S.trust.filter(function (e) { return e.client_id === c.id; }), documents: by(S.docs).map(function (d) { return { name: d.name, folder: d.folder, added: d.created_at, size: d.size_bytes }; }), time: S.time.filter(function (t) { return mids.indexOf(t.matter_id) >= 0; }) };
+  }
+  P2['popia-export'] = async function (el) {
+    var c = byId(S.clients, el.dataset.client); if (!c) return;
+    var b = clientBundle(c), mids = b.matters.map(function (m) { return m.id; });
+    if (mids.length) { var n = await sb.from('matter_notes').select('*').in('matter_id', mids).order('created_at'); if (!n.error) b.file_notes = n.data; }
+    var blob = new Blob([JSON.stringify(b, null, 2)], { type: 'application/json' }), a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'POPIA-' + c.name.replace(/[^\w]+/g, '-') + '-' + ymd(today()) + '.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+    toast('Downloaded everything held on ' + c.name + '. Documents themselves are in the Documents tab.');
+  };
+  function retentionDue() {
+    var yrs = (S.settings && S.settings.retention_years) || 5, cut = addMonths(today(), -12 * yrs);
+    return S.clients.filter(function (c) {
+      if (c.anonymised_at) return false;
+      var ms = S.matters.filter(function (m) { return m.client_id === c.id; });
+      if (ms.some(function (m) { return m.stage !== 'Closed'; })) return false;
+      var last = [c.updated_at, c.created_at].concat(ms.map(function (m) { return m.updated_at; })).concat(S.invoices.filter(function (i) { return i.client_id === c.id; }).map(function (i) { return i.issue_date; })).concat(S.payments.filter(function (p) { return p.client_id === c.id; }).map(function (p) { return p.received_on; })).filter(Boolean).map(D).sort(function (a, b) { return b - a; })[0];
+      c._last = last; return last && last < cut;
+    });
+  }
+  function clientPopia(c) {
+    var partner = isPartner(), log = S.accessLog && S.accessLog[c.id];
+    if (partner && !log) { S.accessLog = S.accessLog || {}; S.accessLog[c.id] = 'loading'; var mids = S.matters.filter(function (m) { return m.client_id === c.id; }).map(function (m) { return m.id; }); sb.from('access_log').select('*').or('client_id.eq.' + c.id + (mids.length ? ',matter_id.in.(' + mids.join(',') + ')' : '')).order('at', { ascending: false }).limit(100).then(function (r) { S.accessLog[c.id] = r.error ? [] : r.data; if (location.hash === '#client=' + c.id) render(); }); }
+    var due = retentionDue().indexOf(c) >= 0, open = S.matters.some(function (m) { return m.client_id === c.id && m.stage !== 'Closed'; });
+    return '<div class="grid g2"><div><h3 style="margin:0 0 8px">Consent and requests</h3><div class="list">' +
+      '<div class="row"><div class="grow">Consent to process personal information</div>' + pill(c.popia_consent ? 'Signed' : 'Outstanding', c.popia_consent ? 'p-green' : 'p-red') + '</div>' +
+      '<div class="row"><div class="grow">Retention</div>' + (c.anonymised_at ? pill('Anonymised ' + fmt(c.anonymised_at), '') : open ? pill('Active client', 'p-blue') : due ? pill('Retention period over', 'p-amber') : pill('Within retention period', 'p-green')) + '</div></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn pri" data-act="popia-export" data-client="' + c.id + '">Download all their data</button>' + (partner && !c.anonymised_at && !open ? '<button class="btn danger" data-act="popia-anon" data-client="' + c.id + '">Anonymise</button>' : '') + '</div>' +
+      '<p class="meta" style="margin-top:10px">Use the download to answer a request for access (POPIA s23). Anonymising removes their name, contact details, notes and documents once the retention period ends; invoices and payments stay for tax purposes without their name.</p></div>' +
+      '<div><h3 style="margin:0 0 8px">Who opened this file</h3>' + (!partner ? '<p class="meta">Only partners can see the access log.</p>' : log === 'loading' || !log ? '<p class="meta">Loading…</p>' : (log.length ? '<div class="tbl"><table><tr><th>When</th><th>Who</th><th>What</th></tr>' + log.map(function (a) { var m = byId(S.matters, a.matter_id); return '<tr><td class="mono">' + (a.at ? fmtDT(a.at) : '—') + '</td><td>' + esc(a.actor) + '</td><td>' + (m ? esc(m.ref) : 'Client page') + '</td></tr>'; }).join('') + '</table></div>' : empty('Nobody has opened it since logging started.'))) + '</div></div>';
+  }
+  P2['popia-anon'] = function (el) {
+    var c = byId(S.clients, el.dataset.client); if (!c) return;
+    openForm({
+      title: 'Anonymise ' + c.name, saveLabel: 'Anonymise permanently',
+      fields: [{ k: 'confirm', label: 'Type the client’s name to confirm', req: true, full: true }],
+      extra: '<div class="callout p-red full">This cannot be undone. It permanently deletes their documents and file notes and removes their name, ID number, contact details and notes everywhere in the CRM. Invoices and payments are kept without their name. Download their data first if you may need it.</div>',
+      save: async function (d) {
+        if (d.confirm.trim().toLowerCase() !== c.name.trim().toLowerCase()) return 'The name does not match.';
+        var r = await sb.rpc('anonymise_client', { p_id: c.id }); if (r.error) return r.error.message;
+        var paths = (r.data && r.data.paths) || []; if (paths.length) await sb.storage.from('documents').remove(paths);
+        await loadAll(); toast('Anonymised. ' + paths.length + ' document' + (paths.length === 1 ? '' : 's') + ' deleted.'); render();
+      }
+    });
+  };
+  function logAccess() {
+    var h = location.hash, row = null;
+    if (h.indexOf('#client=') === 0) row = { client_id: h.slice(8) };
+    else if (h.indexOf('#matter=') === 0) { var m = byId(S.matters, h.slice(8)); if (m) row = { matter_id: m.id, client_id: m.client_id || null }; }
+    if (!row || !S.user) return;
+    var key = (row.matter_id || '') + '|' + (row.client_id || ''); S.logged = S.logged || {};
+    if (S.logged[key] && Date.now() - S.logged[key] < 30 * 60000) return;
+    S.logged[key] = Date.now(); row.actor = S.user.email;
+    sb.from('access_log').insert(row).then(function () {});
+  }
+  function popiaSettings() {
+    var st = S.settings || {}, due = retentionDue(), can = isPartner();
+    return '<div class="panel"><div class="hd"><h2>Retention period</h2></div><p class="sub" style="margin:0 0 12px">How long to keep a former client’s file after their last matter closes. Five years is a common minimum for legal and tax records; check with your professional body before shortening it.</p>' +
+      '<form id="ret-form" class="f" style="grid-template-columns:200px auto;align-items:end"><div class="fld"><label for="ret-years">Keep files for (years)</label><input id="ret-years" type="number" min="1" max="30" value="' + (st.retention_years || 5) + '"' + (can ? '' : ' disabled') + '></div>' + (can ? '<div><button class="btn pri" type="submit">Save</button></div>' : '') + '</form></div>' +
+      '<div class="panel"><div class="hd"><h2>Ready to anonymise</h2><span class="meta">' + due.length + ' former client' + (due.length === 1 ? '' : 's') + ' past the retention period</span></div><div class="tbl"><table><tr><th>Client</th><th>Last activity</th><th></th></tr>' +
+      (due.map(function (c) { return '<tr><td><a href="#client=' + c.id + '"><b>' + esc(c.name) + '</b></a></td><td class="mono">' + fmt(c._last) + '</td><td style="text-align:right"><button class="btn sm" data-act="popia-export" data-client="' + c.id + '">Download data</button>' + (can ? ' <button class="btn sm danger" data-act="popia-anon" data-client="' + c.id + '">Anonymise</button>' : '') + '</td></tr>'; }).join('') || '<tr><td colspan="3">' + empty('Nobody is past the retention period.') + '</td></tr>') + '</table></div></div>' +
+      '<div class="panel"><div class="hd"><h2>Access log</h2></div><p class="sub" style="margin:0">Every time someone opens a client or matter file, the CRM records who and when. Partners can see it on each client’s POPIA tab. Entries cannot be changed or deleted.</p></div>';
+  }
+  document.addEventListener('submit', function (e) { if (e.target.id !== 'ret-form') return; e.preventDefault(); var y = Math.round(Number($('ret-years').value)); if (!(y >= 1 && y <= 30)) { toast('Choose 1 to 30 years.'); return; } saveSettings({ retention_years: y }, 'Saved'); });
+
+  /* ----- Client onboarding link ----- */
+  function randomToken() { var a = new Uint8Array(32); crypto.getRandomValues(a); return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
+  function onboardUrl(o) { return location.origin + '/onboard#' + o.token; }
+  P2['onboard-new'] = function (el) {
+    var c = byId(S.clients, el.dataset.client); if (!c) return;
+    var ms = S.matters.filter(function (m) { return m.client_id === c.id; }), m0 = ms.find(function (m) { return m.stage !== 'Closed'; });
+    openForm({
+      title: 'Onboarding link for ' + c.name, saveLabel: 'Create link',
+      fields: [
+        { k: 'matter_id', label: 'Matter', type: 'select', blank: 'Not linked', options: ms.map(function (m) { return [m.id, m.ref + ' · ' + m.title]; }) },
+        { k: 'fee', label: 'Fee arrangement in the engagement letter', req: true, ph: 'e.g. R 1 950 per hour, billed monthly' },
+        { k: 'scope', label: 'Scope of work in the engagement letter', type: 'textarea', req: true, full: true }
+      ],
+      values: { matter_id: m0 ? m0.id : '', fee: (m0 && m0.fee_arrangement) || '', scope: m0 ? 'Advising and representing you in ' + m0.title + (m0.forum ? ' at the ' + m0.forum : '') + '.' : '' },
+      extra: '<p class="meta full" style="margin:0">The client gets a private link, valid for 14 days and usable once. They confirm their details, upload their ID and supporting documents, accept the engagement letter and give POPIA consent. You get a notification and a task to check their FICA documents.</p>',
+      save: async function (d) {
+        var m = byId(S.matters, d.matter_id) || {}, st = S.settings || {};
+        var v = { FIRM: st.legal_name || st.trading_name || 'Labour Law Alliance', CLIENT: c.name, MATTER: m.title ? m.title + ' (' + m.ref + ')' : 'your labour law matter', ATTORNEY: m.attorney || 'An attorney of the firm', SIGN1: c.name, SIGN2: st.trading_name || 'Labour Law Alliance', 'Fee arrangement': d.fee, 'Scope of work': d.scope };
+        var row = { token: randomToken(), client_id: c.id, matter_id: d.matter_id || null, expires_at: new Date(Date.now() + 14 * 864e5).toISOString(), letter_html: contractHtml('Engagement letter', v) };
+        var r = await sb.from('onboarding').insert(row).select().single(); if (r.error) return dbErr(r);
+        S.onboarding.unshift(r.data); render(); setTimeout(function () { showOnboardLink(r.data); }, 60);
+      }
+    });
+  };
+  function showOnboardLink(o) {
+    var c = byId(S.clients, o.client_id) || {}, url = onboardUrl(o);
+    openForm({
+      title: 'Send the onboarding link', fields: [], saveLabel: c.email ? 'Email it to ' + c.email : 'Close',
+      extra: '<div class="fld full"><label for="ob-url">Private link (valid until ' + fmt(o.expires_at) + ')</label><input id="ob-url" readonly value="' + esc(url) + '" onclick="this.select()"></div><div class="full" style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn sm" data-act="ob-copy">Copy link</button>' + (c.phone ? '<a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/' + esc(String(c.phone).replace(/\D/g, '').replace(/^0/, '27')) + '?text=' + encodeURIComponent('Hello ' + (c.contact_person || c.name) + ', please complete your details and documents for ' + ((S.settings || {}).trading_name || 'Labour Law Alliance') + ' here: ' + url) + '">Send by WhatsApp</a>' : '') + '</div>',
+      save: async function () {
+        if (!c.email) return;
+        var st = S.settings || {};
+        var html = '<p>Dear ' + esc(c.contact_person || c.name) + ',</p><p>Thank you for choosing ' + esc(st.trading_name || 'Labour Law Alliance') + '. Please use the secure link below to confirm your details, upload your ID and supporting documents, and accept our engagement letter. It takes about five minutes.</p><p><a href="' + esc(url) + '" style="display:inline-block;background:#16203b;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none">Complete my onboarding</a></p><p style="color:#666;font-size:13px">The link is private to you and works until ' + fmt(o.expires_at) + '.</p><p>Kind regards,<br>' + esc(st.trading_name || 'Labour Law Alliance') + '</p>';
+        var err = await emailDoc(c.email, 'Your onboarding with ' + (st.trading_name || 'Labour Law Alliance'), html, 'Please complete your onboarding here: ' + url);
+        if (err) return err; toast('Onboarding link emailed to ' + c.email);
+      }
+    });
+  }
+  P2['ob-copy'] = function () { var i = $('ob-url'); navigator.clipboard.writeText(i.value).then(function () { toast('Link copied'); }, function () { i.select(); }); };
+  P2['ob-show'] = function (el) { var o = byId(S.onboarding, el.dataset.id); if (o) showOnboardLink(o); };
+  P2['ob-letter'] = function (el) {
+    var o = byId(S.onboarding, el.dataset.id); if (!o) return;
+    var acc = '<div style="max-width:760px;margin:0 auto 40px;padding:14px 24px;border:2px solid #2e7d32;font-family:Arial,sans-serif;font-size:14px">Accepted online by <b>' + esc(o.accepted_name || '') + '</b> on ' + fmtDT(o.completed_at) + ' using a private onboarding link sent by ' + esc(o.created_by || 'the firm') + '.</div>';
+    printHtml((o.letter_html || '').replace('</body>', acc + '</body>'));
+  };
+  function onboardPanel(c) {
+    var obs = S.onboarding.filter(function (o) { return o.client_id === c.id; });
+    return '<div class="panel"><div class="hd"><h2>Onboarding</h2><button class="btn sm pri" data-act="onboard-new" data-client="' + c.id + '">Send onboarding link</button></div>' +
+      (obs.length ? '<div class="list">' + obs.map(function (o) { var st = o.completed_at ? pill('Completed ' + fmt(o.completed_at), 'p-green') : D(o.expires_at) < new Date() ? pill('Expired', '') : o.opened_at ? pill('Opened, not finished', 'p-amber') : pill('Sent', 'p-blue'); return '<div class="row" style="align-items:center"><div class="grow">Link created ' + fmt(o.created_at) + (o.accepted_name ? '<div class="meta">Engagement letter accepted by ' + esc(o.accepted_name) + '</div>' : '') + '</div>' + st + (o.completed_at ? '<button class="btn sm" data-act="ob-letter" data-id="' + o.id + '">Signed letter</button>' : D(o.expires_at) >= new Date() ? '<button class="btn sm" data-act="ob-show" data-id="' + o.id + '">Link</button>' : '') + '</div>'; }).join('') + '</div>' : '<p class="meta" style="margin:0">Send the client a link to fill in their details, upload their ID and payslips, and accept the engagement letter and POPIA consent on their phone.</p>') + '</div>';
+  }
+
+  /* ----- Profit per matter ----- */
+  function matterProfit(m) {
+    var inv = S.invoices.filter(function (i) { return i.matter_id === m.id && i.status !== 'cancelled'; });
+    var billed = round2(inv.reduce(function (s, i) { return s + totals(itemsOf('invoice', i.id), 0).sub; }, 0));
+    var received = round2(S.payments.filter(function (p) { return p.account === 'business' && (p.matter_id === m.id || inv.some(function (i) { return i.id === p.invoice_id; })); }).reduce(function (s, p) { return s + Number(p.amount); }, 0));
+    var te = S.time.filter(function (t) { return t.matter_id === m.id; });
+    var hours = round2(te.reduce(function (s, t) { return s + Number(t.hours || 0); }, 0));
+    var value = round2(te.reduce(function (s, t) { return s + Number(t.hours || 0) * Number(t.rate || 0); }, 0));
+    var unbilled = round2(te.filter(function (t) { return t.billable && !t.invoice_id; }).reduce(function (s, t) { return s + Number(t.hours || 0) * Number(t.rate || 0); }, 0));
+    return { billed: billed, received: received, hours: hours, value: value, unbilled: unbilled, eff: hours ? round2(billed / hours) : null, writeOff: round2(Math.max(0, value - unbilled - billed)) };
+  }
+  function profitStrip(m) {
+    var p = matterProfit(m), rate = (S.settings && S.settings.hourly_rate) || 0;
+    return '<div class="grid g4" style="margin-bottom:12px"><div class="panel stat"><b>' + R2(p.billed) + '</b><span>Billed (excl. VAT)</span></div><div class="panel stat"><b>' + R2(p.received) + '</b><span>Received</span></div><div class="panel stat"><b>' + p.hours + ' h</b><span>Time logged · ' + R2(p.unbilled) + ' not billed yet</span></div><div class="panel stat"><b' + (p.eff !== null && rate && p.eff < rate * 0.8 ? ' style="color:var(--amber)"' : '') + '>' + (p.eff === null ? '—' : R2(p.eff)) + '</b><span>Earned per hour' + (rate ? ' (standard ' + R2(rate) + ')' : '') + '</span></div></div>';
+  }
+  function profitView() {
+    var rows = S.matters.map(function (m) { return { m: m, p: matterProfit(m) }; }).filter(function (x) { return x.p.billed || x.p.hours; });
+    var byType = {};
+    rows.forEach(function (x) { var k = x.m.dispute_type || 'Other'; var t = byType[k] = byType[k] || { n: 0, billed: 0, hours: 0, received: 0 }; t.n++; t.billed += x.p.billed; t.hours += x.p.hours; t.received += x.p.received; });
+    var types = Object.keys(byType).map(function (k) { var t = byType[k]; return [k, t.n, round2(t.billed), round2(t.hours), t.hours ? round2(t.billed / t.hours) : null, round2(t.billed / t.n)]; }).sort(function (a, b) { return (b[4] || 0) - (a[4] || 0); });
+    var rate = (S.settings && S.settings.hourly_rate) || 0;
+    var tabs = '<div class="subtabs">' + ['Practice', 'Sales', 'Website', 'Finance', 'Report', 'Profit'].map(function (x) { return '<button data-dashtab="' + x + '" class="' + (x === 'Profit' ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    return head('Profit', 'Which work pays best', 'Fees billed (excluding VAT) against the time logged on each matter. Earned per hour = fees billed ÷ hours logged' + (rate ? '; your standard rate is ' + R2(rate) : '') + '. It is only as good as your time records.', '<button class="btn pri" data-act="log-time">Log time</button>') + tabs +
+      '<div class="panel"><div class="hd"><h2>By type of work</h2></div><div class="tbl"><table><tr><th>Type</th><th>Matters</th><th style="text-align:right">Billed</th><th style="text-align:right">Hours</th><th style="text-align:right">Earned per hour</th><th style="text-align:right">Average per matter</th></tr>' +
+      (types.map(function (t) { return '<tr><td><b>' + esc(t[0]) + '</b></td><td class="mono">' + t[1] + '</td><td class="mono" style="text-align:right">' + R2(t[2]) + '</td><td class="mono" style="text-align:right">' + t[3] + '</td><td class="mono" style="text-align:right"' + (t[4] !== null && rate && t[4] < rate * 0.8 ? ' title="Below 80% of your standard rate"' : '') + '>' + (t[4] === null ? '—' : R2(t[4])) + '</td><td class="mono" style="text-align:right">' + R2(t[5]) + '</td></tr>'; }).join('') || '<tr><td colspan="6">' + empty('Log time and send invoices on matters to see this.') + '</td></tr>') + '</table></div></div>' +
+      '<div class="panel"><div class="hd"><h2>By matter</h2></div><div class="tbl"><table><tr><th>Matter</th><th>Stage</th><th style="text-align:right">Billed</th><th style="text-align:right">Received</th><th style="text-align:right">Hours</th><th style="text-align:right">Not billed</th><th style="text-align:right">Earned per hour</th></tr>' +
+      (rows.sort(function (a, b) { return (b.p.eff || 0) - (a.p.eff || 0); }).map(function (x) { var p = x.p; return '<tr class="click" data-matter="' + x.m.id + '"><td><span class="mono">' + esc(x.m.ref) + '</span><br><b>' + esc(x.m.title) + '</b></td><td>' + stagePill(x.m.stage) + '</td><td class="mono" style="text-align:right">' + R2(p.billed) + '</td><td class="mono" style="text-align:right">' + R2(p.received) + '</td><td class="mono" style="text-align:right">' + p.hours + '</td><td class="mono" style="text-align:right">' + R2(p.unbilled) + '</td><td class="mono" style="text-align:right' + (p.eff !== null && rate && p.eff < rate * 0.8 ? ';color:var(--amber)' : '') + '">' + (p.eff === null ? '—' : R2(p.eff)) + '</td></tr>'; }).join('') || '<tr><td colspan="7">' + empty('Nothing yet.') + '</td></tr>') + '</table></div></div>';
+  }
+  var _dash6 = V.dashboard;
+  V.dashboard = function () {
+    if (S.ui.dashTab === 'Profit') return profitView();
+    return _dash6().replace(/(<button data-dashtab="Report" class="(?:on)?">Report<\/button>)/, '$1<button data-dashtab="Profit" class="">Profit</button>');
+  };
 
   /* ----- Shell: popovers, theme, sidebar ----- */
   function popover(html, anchor, cls) {
@@ -2474,6 +2771,7 @@ function renderNav(cur) {
   function ring(pct, big, small) { var r = 40, cc = 2 * Math.PI * r, off = cc * (1 - Math.max(0, Math.min(1, pct))); return '<div class="ring"><svg width="96" height="96" viewBox="0 0 96 96"><circle class="trk" cx="48" cy="48" r="' + r + '"/><circle class="val" cx="48" cy="48" r="' + r + '" stroke-dasharray="' + cc.toFixed(1) + '" stroke-dashoffset="' + cc.toFixed(1) + '" data-off="' + off.toFixed(1) + '"/></svg><div class="lab"><span><b>' + big + '</b><small>' + small + '</small></span></div></div>'; }
   var lastRoute = null;
   function afterRender() {
+    logAccess();
     var v = $('view'), route = location.hash.split('&')[0];
     drawCrumbs(); drawNextUp();
     var av = initials(); $('me-av').textContent = av; $('avatar-btn').textContent = av;
