@@ -324,6 +324,52 @@ input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
   .tl .it{grid-template-columns:1fr;gap:2px}
   .btn-new span{display:none}
 }
+/* Sales pages: edit, send, view (split), payment */
+.de{display:flex;flex-direction:column;gap:14px;padding-bottom:90px}
+.de-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.de-head h1{font-size:24px;margin:0;letter-spacing:-.01em}
+.de-sec{padding:18px 22px}
+.de-row{display:grid;grid-template-columns:170px minmax(0,1fr);gap:14px;align-items:start;padding:7px 0}
+.de-row>label{padding-top:9px;font-weight:600;font-size:13.5px;color:var(--muted)}
+.de-row>label.req,label.req{color:var(--red)}
+.de-row>label.req::after{content:'*'}
+.de-row>div{max-width:720px}
+.de-inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.de-inline>input,.de-inline>select{max-width:200px}
+.lbl2{font-weight:600;font-size:13.5px;color:var(--muted);margin-left:10px}
+.de-lines td{vertical-align:top}
+.de-lines input,.de-lines select,.de-lines textarea{width:100%}
+.de-lines .it-det{margin-top:6px;font-size:13px;min-height:34px;resize:vertical}
+.de-totals .row{padding:8px 0}
+.de-foot{position:sticky;bottom:12px;z-index:5;display:flex;gap:8px;align-items:center;padding:12px 16px;border-radius:16px;background:var(--glass-2);border:1px solid var(--line-2);backdrop-filter:blur(24px) saturate(1.2);-webkit-backdrop-filter:blur(24px) saturate(1.2);box-shadow:var(--shadow)}
+:root[data-theme="dark"] .de-foot{background:rgba(24,31,33,.9)}
+.combo-btn{display:flex;align-items:center;gap:10px;width:100%;max-width:520px;padding:9px 12px;border-radius:12px;border:1px solid var(--line-2);background:var(--glass-3);cursor:pointer;text-align:left}
+.combo-btn:hover{border-color:var(--accent)}
+.avatar.sm{width:28px;height:28px;font-size:12px;flex:0 0 28px}
+.menu-list{max-height:300px;overflow:auto;padding:4px}
+.pop .hit .meta{font-weight:400}
+.split{display:grid;grid-template-columns:320px minmax(0,1fr);gap:16px;align-items:start}
+.slist{padding:0;position:sticky;top:90px;max-height:calc(100vh - 110px);display:flex;flex-direction:column;overflow:hidden}
+.slist-h{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+.slist-b{overflow:auto}
+.si{display:block;padding:11px 16px;border-bottom:1px solid var(--line);text-decoration:none;color:var(--ink);transition:background .15s}
+.si:hover{background:var(--glass-3)}
+.si.on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.si-t{display:flex;justify-content:space-between;gap:8px}
+.si-t b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sdoc{display:flex;flex-direction:column;gap:14px;min-width:0}
+.sdoc-h{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 18px}
+.sdoc-h h1{font-size:22px}
+.sdoc-tools{display:flex;gap:6px;flex-wrap:wrap}
+.docframe{display:block;width:100%;height:900px;border:0;background:#f1f1f1}
+.em-prev{background:#fff;color:#1d1d1d}
+.em-logo{padding:20px 28px 10px}
+.em-band{background:#16203b;color:#fff;text-align:center;font-size:19px;padding:24px 16px}
+.em-body{padding:22px 34px 26px}
+.em-body textarea{width:100%;min-height:200px;border:1px dashed #c7ccd6;border-radius:8px;background:#fff;color:#1d1d1d;font:15px/1.6 Arial,sans-serif;padding:10px 12px}
+.em-sum{margin-top:16px;background:#fefbe8;border:1px solid #f1e7b4;padding:16px;text-align:center;font:14px Arial,sans-serif;color:#1d1d1d}
+@media (max-width:1100px){.split{grid-template-columns:1fr}.slist{position:static;max-height:280px}}
+@media (max-width:700px){.de-foot{flex-wrap:wrap;bottom:8px}.de-foot>span[style]{display:none}#de-foot-sum{width:100%;order:-1}.sdoc-h h1{font-size:19px}.de-row{grid-template-columns:1fr;gap:4px}.de-row>label{padding-top:0}.de-lines thead{display:none}.de-lines tr{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:10px 0;border-bottom:1px solid var(--line)}.de-lines td:first-child{grid-column:1/-1}.lbl2{margin-left:0}}
 </style>
 </head>
 <body>
@@ -388,6 +434,6 @@ input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
 <div class="toast hidden" id="toast" role="status"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/assets/js/crm.js?v=10"></script>
+<script src="/assets/js/crm.js?v=11"></script>
 </body>
 </html>
