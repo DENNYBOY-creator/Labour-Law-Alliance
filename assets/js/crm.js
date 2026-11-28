@@ -45,7 +45,7 @@
   var FORUMS = ['CCMA', 'Bargaining council', 'Labour Court', 'Labour Appeal Court', 'Internal hearing', 'Consultation process', 'Advice only'];
 
   /* ---------- State ---------- */
-  var S = { user: null, leads: [], clients: [], matters: [], appts: [], deadlines: [], notes: {}, settings: {}, staff: [], quotes: [], invoices: [], items: [], payments: [], docs: [], time: [], hearings: [], compliance: [], me: {}, ui: { inboxSel: null, inboxTab: 'All', matterTab: 'Overview', weekStart: null, clientQ: '', matterQ: '' } };
+  var S = { user: null, leads: [], clients: [], matters: [], appts: [], deadlines: [], notes: {}, settings: {}, staff: [], quotes: [], invoices: [], items: [], payments: [], docs: [], time: [], hearings: [], compliance: [], tasks: [], activity: [], me: {}, ui: { inboxSel: null, inboxTab: 'All', matterTab: 'Overview', weekStart: null, clientQ: '', matterQ: '' } };
   var byId = function (arr, id) { return arr.find(function (x) { return x.id === id; }); };
   var clientName = function (id) { var c = byId(S.clients, id); return c ? c.name : '—'; };
   var leadName = function (l) { return ((l.first_name || '') + ' ' + (l.last_name || '')).trim() || 'No name'; };
@@ -136,12 +136,14 @@
       sb.from('documents').select('*').order('created_at', { ascending: false }),
       sb.from('time_entries').select('*').order('work_date', { ascending: false }),
       sb.from('hearings').select('*').order('starts_at', { ascending: true }),
-      sb.from('compliance_items').select('*').order('due_date', { ascending: true })
+      sb.from('compliance_items').select('*').order('due_date', { ascending: true }),
+      sb.from('tasks').select('*').order('due_date', { ascending: true, nullsFirst: false }),
+      sb.from('activity').select('*').order('id', { ascending: false }).limit(300)
     ]);
     var bad = res.find(function (r) { return r.error; });
     if (bad) { $('view').innerHTML = '<div class="callout p-red">Could not load data: ' + esc(bad.error.message) + '</div>'; return false; }
     S.leads = res[0].data; S.clients = res[1].data; S.matters = res[2].data; S.appts = res[3].data; S.deadlines = res[4].data;
-    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data;
+    S.settings = res[5].data; S.staff = res[6].data; S.quotes = res[7].data; S.invoices = res[8].data; S.items = res[9].data; S.payments = res[10].data; S.docs = res[11].data; S.time = res[12].data; S.hearings = res[13].data; S.compliance = res[14].data; S.tasks = res[15].data; S.activity = res[16].data;
     S.me = S.staff.find(function (s) { return S.user && (s.email || '').toLowerCase() === (S.user.email || '').toLowerCase(); }) || {};
     return true;
   }
@@ -162,6 +164,7 @@
     S.deadlines.forEach(function (d) { if (d.done) return; var m = byId(S.matters, d.matter_id); out.push({ date: D(d.due_date), what: d.title, ref: m ? m.ref : '', title: m ? m.title : '', kind: 'Deadline', law: '', matter: d.matter_id, deadlineId: d.id }); });
     (S.hearings || []).forEach(function (h) { if (h.status !== 'scheduled' || !h.starts_at) return; var m = byId(S.matters, h.matter_id); out.push({ date: D(h.starts_at), what: 'Disciplinary hearing: ' + h.employee_name + ' · ' + fmtT(h.starts_at), ref: m ? m.ref : '', title: clientName(h.client_id), kind: 'Hearing', law: '', matter: h.matter_id }); });
     (S.compliance || []).forEach(function (c) { if (c.status !== 'open') return; out.push({ date: D(c.due_date), what: c.obligation, ref: '', title: clientName(c.client_id), kind: 'Compliance', law: c.law || '' }); });
+    (S.tasks || []).forEach(function (t) { if (t.status !== 'open' || !t.due_date) return; var m = byId(S.matters, t.matter_id); out.push({ date: D(t.due_date), what: t.title, ref: m ? m.ref : '', title: t.assigned_to ? 'for ' + staffName(t.assigned_to) : '', kind: 'Task', law: '', matter: t.matter_id }); });
     S.appts.forEach(function (a) {
       if (a.status !== 'scheduled' && a.status !== 'provisional') return;
       if (/^(hearing|matter-next):/.test(a.source_key || '')) return; // already listed as a hearing or matter next step
@@ -174,6 +177,7 @@
   /* ---------- Navigation ---------- */
   var NAV = [
     { grp: 'Overview' },
+    { id: 'mywork', label: 'My work', n: function () { return myTasks().filter(function (t) { return t.due_date && daysLeft(t.due_date) <= 0; }).length; }, hot: true },
     { id: 'dashboard', label: 'Dashboard' },
     { id: 'inbox', label: 'Inbox', n: function () { return S.leads.filter(function (l) { return !l.seen_at; }).length; }, hot: true },
     { grp: 'Work' },
@@ -217,7 +221,7 @@
     return head(new Date().toLocaleDateString('en-ZA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }), 'Dashboard', 'Deadlines, appointments and new enquiries across the practice.', '<button class="btn pri" data-act="new-lead">New enquiry</button><button class="btn" data-act="new-matter">New matter</button>') +
       '<div class="grid g4">' +
       '<a class="panel stat" href="#matters" style="text-decoration:none;color:inherit"><b>' + open.length + '</b><span>Open matters</span></a>' +
-      '<a class="panel stat" href="#deadlines" style="text-decoration:none;color:inherit"><b style="color:var(--red)">' + ag.filter(function (d) { return d.left <= 7 && d.left >= 0 && /Time limit|Deadline|Diary|Compliance|Hearing/.test(d.kind); }).length + '</b><span>Deadlines in the next 7 days</span></a>' +
+      '<a class="panel stat" href="#deadlines" style="text-decoration:none;color:inherit"><b style="color:var(--red)">' + ag.filter(function (d) { return d.left <= 7 && d.left >= 0 && /Time limit|Deadline|Diary|Compliance|Hearing|Task/.test(d.kind); }).length + '</b><span>Deadlines in the next 7 days</span></a>' +
       '<a class="panel stat" href="#appointments" style="text-decoration:none;color:inherit"><b>' + apptsWeek.length + '</b><span>Appointments in the next 7 days</span></a>' +
       '<a class="panel stat" href="#inbox" style="text-decoration:none;color:inherit"><b>' + newLeads.length + '</b><span>New enquiries to answer</span></a></div>' +
       '<div class="grid g21"><div class="panel"><div class="hd"><h2>Coming up</h2><a href="#deadlines">All deadlines</a></div><div class="list">' +
@@ -359,7 +363,7 @@
       { k: 'key_date', label: 'Date the time limit runs from', type: 'date', hint: 'Choose a time limit to work out the deadline.' },
       { k: 'next_step', label: 'Next step', ph: 'e.g. Conciliation at CCMA Johannesburg' },
       { k: 'next_date', label: 'Next step date', type: 'date' },
-      { k: 'attorney', label: 'Responsible attorney' },
+      { k: 'assigned_email', label: 'Responsible attorney', type: 'select', blank: 'Not assigned', options: S.staff.filter(function (s) { return s.active; }).map(function (s) { return [s.email, (s.full_name || s.email) + ' · ' + roleLabelShort(s.role)]; }) },
       { k: 'fee_arrangement', label: 'Fee arrangement', ph: 'e.g. Hourly R 1 950' },
       { k: 'value_sought', label: 'What the client wants', full: true, ph: 'e.g. Reinstatement or 12 months’ compensation' },
       { k: 'notes', label: 'Background', type: 'textarea', full: true }
@@ -380,6 +384,8 @@
     openForm({
       title: isNew ? 'New matter' : 'Edit ' + m.ref, fields: matterFields(), values: m || Object.assign({ stage: 'Intake', acting_for: 'employee' }, preset || {}), onInput: function () { keyDateHint(); conflictHint('m-other_party', { matter: m && m.id, otherParty: true }); },
       save: async function (d) {
+        var st0 = d.assigned_email && S.staff.find(function (s) { return s.email === d.assigned_email; });
+        d.attorney = st0 ? (st0.full_name || st0.email) : null;
         var r = isNew ? await sb.from('matters').insert(Object.assign(d, preset && preset.lead_id ? { lead_id: preset.lead_id } : {})).select().single() : await sb.from('matters').update(d).eq('id', m.id).select().single();
         if (r.error) return dbErr(r);
         var wasOpen = isNew || m.stage !== 'Closed';
@@ -394,7 +400,7 @@
     });
   }
   function matterDetail(m) {
-    var tabs = ['Overview', 'Deadlines', 'File notes', 'Appointments', 'Time', 'Hearings', 'Billing', 'Documents', 'Emails'];
+    var tabs = ['Overview', 'Tasks', 'Deadlines', 'File notes', 'Appointments', 'Time', 'Hearings', 'Billing', 'Documents', 'Emails', 'History'];
     var t = S.ui.matterTab, si = STAGES.indexOf(m.stage), r = m.key_rule && rule(m.key_rule), c = byId(S.clients, m.client_id);
     var body = '';
     if (t === 'Overview') body = '<div class="grid g2"><dl class="kv"><dt>Client</dt><dd>' + (c ? '<a href="#" data-client="' + c.id + '">' + esc(c.name) + '</a>' : '—') + '</dd><dt>We act for</dt><dd>' + esc(m.acting_for) + '</dd><dt>Other party</dt><dd>' + esc(m.other_party || '—') + '</dd><dt>Type</dt><dd>' + esc(m.dispute_type || '—') + '</dd><dt>Forum</dt><dd>' + esc(m.forum || '—') + '</dd><dt>Case number</dt><dd>' + esc(m.case_no || '—') + '</dd><dt>Attorney</dt><dd>' + esc(m.attorney || '—') + '</dd><dt>Opened</dt><dd>' + fmt(m.created_at) + '</dd></dl>' +
@@ -418,6 +424,8 @@
     }
     if (t === 'Time') body = matterTime(m);
     if (t === 'Emails') body = matterEmails(m);
+    if (t === 'Tasks') body = '<div style="margin-bottom:10px"><button class="btn pri" data-act="new-task" data-matter="' + m.id + '">New task</button></div>' + taskList(S.tasks.filter(function (x) { return x.matter_id === m.id; }), true);
+    if (t === 'History') body = historyList(S.activity.filter(function (a) { return a.matter_id === m.id; }), 'matter', m.id);
     if (t === 'Hearings') body = matterHearings(m);
     if (t === 'Billing') body = matterBilling(m);
     if (t === 'Documents') body = matterDocs(m);
@@ -429,7 +437,7 @@
   /* ---------- Deadlines ---------- */
   V.deadlines = function () {
     var ag = agenda();
-    var overdue = ag.filter(function (d) { return d.left < 0 && /Time limit|Deadline|Diary|Compliance/.test(d.kind); });
+    var overdue = ag.filter(function (d) { return d.left < 0 && /Time limit|Deadline|Diary|Compliance|Task/.test(d.kind); });
     var up = ag.filter(function (d) { return d.left >= 0; });
     var line = function (d) { return '<div class="row">' + dateBox(d.date) + '<div class="grow"><b>' + esc(d.what) + '</b><div class="meta">' + [d.ref, d.title, d.law].filter(Boolean).map(esc).join(' · ') + '</div></div><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">' + pill(d.kind, d.kind === 'Time limit' ? 'p-gold' : d.kind === 'Deadline' ? 'p-violet' : d.kind === 'Diary' ? '' : 'p-blue') + urg(d.left) + (d.matter ? '<a class="meta" href="#matter=' + d.matter + '">Open matter</a>' : '') + '</div></div>'; };
     return head('Deadlines', 'Time limits and diary', 'Statutory time limits are worked out from the key date on each matter. Hand-added deadlines, next steps and appointments are listed with them.') +
@@ -1700,7 +1708,7 @@
     S.clients.forEach(function (c) { if (c.id !== skip.client && (hit(c.name) || hit(c.contact_person))) out.push({ text: 'Client: ' + c.name, risk: skip.otherParty ? 'high' : 'low', client: c.id }); });
     S.matters.forEach(function (m) { if (m.id === skip.matter) return; if (hit(m.other_party)) out.push({ text: 'Other party on ' + m.ref + ' (' + m.title + '), where we act for the ' + m.acting_for, risk: skip.otherParty ? 'low' : 'high', matter: m.id }); });
     S.hearings.forEach(function (h) { if (hit(h.employee_name)) out.push({ text: 'Employee in a disciplinary hearing for ' + clientName(h.client_id), risk: 'high', hearing: h.id }); });
-    S.leads.forEach(function (l) { if (l.id !== skip.lead && hit(leadName(l))) out.push({ text: 'Earlier enquiry from ' + leadName(l) + ' (' + fmt(l.created_at) + ')', risk: 'low', lead: l.id }); });
+    S.leads.forEach(function (l) { if (l.id !== skip.lead && !(skip.client && l.client_id === skip.client) && hit(leadName(l))) out.push({ text: 'Earlier enquiry from ' + leadName(l) + ' (' + fmt(l.created_at) + ')', risk: 'low', lead: l.id }); });
     return out;
   }
   function conflictHtml(list) {
@@ -1751,13 +1759,275 @@
   P2['copy'] = function (el) { var i = $(el.dataset.target); i.select(); (navigator.clipboard ? navigator.clipboard.writeText(i.value) : Promise.reject()).then(function () { toast('Copied'); }, function () { document.execCommand('copy'); toast('Copied'); }); };
   document.addEventListener('submit', function (e) { if (e.target.id !== 'rem-form') return; e.preventDefault(); saveSettings({ reminders_enabled: $('rem-on').checked, daily_agenda_enabled: $('agenda-on').checked }, 'Saved'); });
 
+  /* =====================================================================
+     INTERLINKING: search, client page, tasks & My work, stage assistant, activity & notifications
+     ===================================================================== */
+  function staffName(email) { var s = S.staff.find(function (x) { return (x.email || '').toLowerCase() === String(email || '').toLowerCase(); }); return s ? (s.full_name || s.email.split('@')[0]) : (email ? String(email).split('@')[0] : '—'); }
+  function roleLabelShort(r) { return { partner: 'Partner', attorney: 'Attorney', candidate_attorney: 'Candidate attorney', reception: 'Reception', bookkeeper: 'Bookkeeper' }[r] || r || ''; }
+  var myEmail = function () { return ((S.user && S.user.email) || '').toLowerCase(); };
+  function myTasks() { return S.tasks.filter(function (t) { return t.status === 'open' && (t.assigned_to || '').toLowerCase() === myEmail(); }); }
+
+  /* ----- Tasks ----- */
+  function taskList(ts, hideMatter) {
+    ts = ts.slice().sort(function (a, b) { if (a.status !== b.status) return a.status === 'open' ? -1 : 1; return (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1; });
+    return '<div>' + (ts.map(function (t) { var m = byId(S.matters, t.matter_id); return '<div class="taskrow' + (t.status === 'done' ? ' done' : '') + '"><input type="checkbox" data-act="task-toggle" data-id="' + t.id + '"' + (t.status === 'done' ? ' checked' : '') + ' aria-label="Done"><div class="grow" style="flex:1;min-width:0"><a href="#" data-act="open-task" data-id="' + t.id + '"><b>' + esc(t.title) + '</b></a><div class="meta">' + [t.assigned_to ? 'For ' + esc(staffName(t.assigned_to)) : 'Unassigned', !hideMatter && m ? '<a href="#matter=' + m.id + '">' + esc(m.ref) + '</a>' : '', t.client_id && !m ? esc(clientName(t.client_id)) : '', t.priority === 'high' ? '<b style="color:var(--red)">High priority</b>' : ''].filter(Boolean).join(' · ') + '</div></div>' + (t.status === 'done' ? pill('Done ' + fmt(t.done_at), 'p-green') : t.due_date ? urg(daysLeft(t.due_date)) : pill('No date')) + '</div>'; }).join('') || empty('No tasks.')) + '</div>';
+  }
+  function editTask(t, preset) {
+    var isNew = !t || !t.id;
+    openForm({
+      title: isNew ? 'New task' : 'Task',
+      fields: [
+        { k: 'title', label: 'What needs doing', req: true, full: true },
+        { k: 'assigned_to', label: 'Assigned to', type: 'select', blank: 'Unassigned', options: S.staff.filter(function (s) { return s.active; }).map(function (s) { return [s.email, (s.full_name || s.email) + (s.email.toLowerCase() === myEmail() ? ' (me)' : '')]; }) },
+        { k: 'due_date', label: 'Due', type: 'date' },
+        { k: 'priority', label: 'Priority', type: 'select', options: [['normal', 'Normal'], ['high', 'High'], ['low', 'Low']] },
+        { k: 'matter_id', label: 'Matter', type: 'select', blank: 'Not linked', options: S.matters.map(function (m) { return [m.id, m.ref + ' · ' + m.title]; }) },
+        { k: 'client_id', label: 'Client', type: 'select', blank: 'Not linked', options: S.clients.map(function (c) { return [c.id, c.name]; }) },
+        { k: 'notes', label: 'Notes', type: 'textarea', full: true }
+      ],
+      values: t || Object.assign({ assigned_to: S.user && S.user.email, priority: 'normal', due_date: ymd(addDays(today(), 1)) }, preset || {}),
+      save: async function (d) {
+        if (d.matter_id && !d.client_id) d.client_id = (byId(S.matters, d.matter_id) || {}).client_id || null;
+        var r = isNew ? await sb.from('tasks').insert(d).select().single() : await sb.from('tasks').update(d).eq('id', t.id).select().single();
+        if (r.error) return dbErr(r);
+        upsertLocal(S.tasks, r.data); toast(isNew ? 'Task added' + (d.assigned_to && d.assigned_to.toLowerCase() !== myEmail() ? ' for ' + staffName(d.assigned_to) : '') : 'Task saved'); render();
+      },
+      del: isNew ? null : async function () { var r = await sb.from('tasks').delete().eq('id', t.id); if (r.error) return dbErr(r); S.tasks = S.tasks.filter(function (x) { return x.id !== t.id; }); toast('Task deleted'); render(); }
+    });
+  }
+  P2['new-task'] = function (el) { var m = el.dataset.matter && byId(S.matters, el.dataset.matter); editTask(null, m ? { matter_id: m.id, client_id: m.client_id, assigned_to: m.assigned_email || (S.user && S.user.email) } : el.dataset.client ? { client_id: el.dataset.client } : null); };
+  P2['open-task'] = function (el) { editTask(byId(S.tasks, el.dataset.id)); };
+  P2['task-toggle'] = async function (el) {
+    var t = byId(S.tasks, el.dataset.id), done = t.status !== 'done';
+    var r = await sb.from('tasks').update({ status: done ? 'done' : 'open', done_at: done ? new Date().toISOString() : null }).eq('id', t.id).select().single();
+    if (r.error) { toast(r.error.message); return; }
+    upsertLocal(S.tasks, r.data); toast(done ? 'Done' : 'Reopened'); render();
+  };
+
+  /* ----- My work ----- */
+  V.mywork = function () {
+    var me = myEmail(), tab = S.ui.mwTab || 'My tasks';
+    var mine = myTasks(), mineM = S.matters.filter(function (m) { return (m.assigned_email || '').toLowerCase() === me && m.stage !== 'Closed'; });
+    var mineMids = mineM.map(function (m) { return m.id; });
+    var ag = agenda().filter(function (d) { return d.left >= -30 && d.left <= 14 && (d.matter && mineMids.indexOf(d.matter) >= 0); });
+    var tabs = '<div class="subtabs">' + ['My tasks', 'My matters', 'Tasks I gave others', 'Everyone’s tasks'].map(function (x) { return '<button data-mwtab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    var body;
+    if (tab === 'My tasks') body = '<div class="grid g21"><div class="panel"><div class="hd"><h2>My open tasks</h2><button class="btn pri" data-act="new-task">New task</button></div>' + taskList(mine) + '</div><div class="panel"><div class="hd"><h2>Coming up on my matters</h2></div><div class="list">' + (ag.map(function (d) { return '<div class="row">' + dateBox(d.date) + '<div class="grow"><b>' + esc(d.what) + '</b><div class="meta">' + [d.kind, d.ref].filter(Boolean).map(esc).join(' · ') + '</div></div>' + urg(d.left) + '</div>'; }).join('') || empty('Nothing in the next two weeks.')) + '</div></div></div>' +
+      '<div class="panel"><div class="hd"><h2>Recently completed</h2></div>' + taskList(S.tasks.filter(function (t) { return t.status === 'done' && (t.assigned_to || '').toLowerCase() === me; }).slice(-10)) + '</div>';
+    else if (tab === 'My matters') body = '<div class="panel"><div class="tbl"><table><tr><th>Matter</th><th>Client</th><th>Stage</th><th>Next step</th><th>Open tasks</th></tr>' + (mineM.map(function (m) { return '<tr class="click" data-matter="' + m.id + '"><td><span class="mono">' + esc(m.ref) + '</span><br><b>' + esc(m.title) + '</b></td><td>' + esc(clientName(m.client_id)) + '</td><td>' + stagePill(m.stage) + '</td><td>' + (m.next_date ? esc(m.next_step || '') + '<br><span class="mono">' + fmt(m.next_date) + '</span>' : '—') + '</td><td class="mono">' + S.tasks.filter(function (t) { return t.matter_id === m.id && t.status === 'open'; }).length + '</td></tr>'; }).join('') || '<tr><td colspan="5">' + empty('No matters are assigned to you. Choose the responsible attorney when you edit a matter.') + '</td></tr>') + '</table></div></div>';
+    else if (tab === 'Tasks I gave others') body = '<div class="panel">' + taskList(S.tasks.filter(function (t) { return (t.created_by || '').toLowerCase() === me && (t.assigned_to || '').toLowerCase() !== me; })) + '</div>';
+    else { var who = S.ui.mwWho || ''; body = '<div class="panel"><div class="hd"><h2>All open tasks</h2><select id="mw-who" style="max-width:240px"><option value="">Everyone</option>' + S.staff.map(function (s) { return '<option value="' + esc(s.email) + '"' + (s.email === who ? ' selected' : '') + '>' + esc(s.full_name || s.email) + '</option>'; }).join('') + '</select></div>' + taskList(S.tasks.filter(function (t) { return t.status === 'open' && (!who || t.assigned_to === who); })) + '</div>'; }
+    return head('My work', 'Hello' + (S.me && S.me.full_name ? ', ' + esc(S.me.full_name.split(' ')[0]) : ''), 'Your tasks, your matters and what is coming up on them.', '<button class="btn pri" data-act="new-task">New task</button>') +
+      '<div class="grid g4"><div class="panel stat"><b style="color:var(--red)">' + mine.filter(function (t) { return t.due_date && daysLeft(t.due_date) < 0; }).length + '</b><span>My overdue tasks</span></div><div class="panel stat"><b>' + mine.filter(function (t) { return t.due_date && daysLeft(t.due_date) === 0; }).length + '</b><span>Due today</span></div><div class="panel stat"><b>' + mine.length + '</b><span>My open tasks</span></div><div class="panel stat"><b>' + mineM.length + '</b><span>My open matters</span></div></div>' + tabs + body;
+  };
+  document.addEventListener('click', function (e) { var b = e.target.closest('[data-mwtab]'); if (!b) return; S.ui.mwTab = b.dataset.mwtab; render(); });
+  document.addEventListener('change', function (e) { if (e.target.id === 'mw-who') { S.ui.mwWho = e.target.value; render(); } });
+
+  /* ----- Activity history ----- */
+  var ENTITY_LINK = function (a) { return a.matter_id ? '#matter=' + a.matter_id : a.client_id ? '#client=' + a.client_id : a.entity === 'leads' ? '#inbox' : a.entity === 'tasks' ? '#mywork' : a.entity === 'appointments' ? '#appointments' : a.entity === 'payments' ? '#payments' : a.entity === 'invoices' ? '#quotes' : '#dashboard'; };
+  function actorLabel(a) { return !a.actor || a.actor === 'Website' ? 'Website' : a.actor.toLowerCase() === myEmail() ? 'You' : staffName(a.actor); }
+  function historyList(acts, kind, id) {
+    var more = '';
+    if (acts.length >= 0 && S.histLoaded !== kind + id) { S.histLoaded = kind + id; sb.from('activity').select('*').eq(kind === 'matter' ? 'matter_id' : 'client_id', id).order('id', { ascending: false }).limit(200).then(function (r) { if (r.error) return; r.data.forEach(function (x) { if (!S.activity.some(function (y) { return y.id === x.id; })) S.activity.push(x); }); S.activity.sort(function (a, b) { return b.id - a.id; }); render(); }); }
+    return '<div class="tl">' + (acts.map(function (a) { return '<div class="it"><span class="mono">' + fmtDT(a.at) + '</span><div>' + esc(a.summary) + '<div class="meta">' + esc(actorLabel(a)) + '</div></div></div>'; }).join('') || empty('No history yet. Changes are recorded from now on.')) + '</div>' + more;
+  }
+
+  /* ----- Client page ----- */
+  function clientPage(c) {
+    var tab = S.ui.cTab || 'Timeline';
+    var ms = S.matters.filter(function (m) { return m.client_id === c.id; });
+    var mids = ms.map(function (m) { return m.id; });
+    var inv = S.invoices.filter(function (i) { return i.client_id === c.id; }), pays = S.payments.filter(function (p) { return p.client_id === c.id; });
+    var owed = inv.reduce(function (s, i) { var st = invState(i); return s + (['sent', 'part', 'overdue'].indexOf(st.key) >= 0 ? st.bal : 0); }, 0);
+    var trust = pays.filter(function (p) { return p.account === 'trust'; }).reduce(function (s, p) { return s + Number(p.amount); }, 0);
+    var leads = S.leads.filter(function (l) { return l.client_id === c.id; });
+    var appts = S.appts.filter(function (a) { return a.client_id === c.id || mids.indexOf(a.matter_id) >= 0; });
+    var hs = S.hearings.filter(function (h) { return h.client_id === c.id || mids.indexOf(h.matter_id) >= 0; });
+    var docs = S.docs.filter(function (d) { return d.client_id === c.id || mids.indexOf(d.matter_id) >= 0; });
+    var ts = S.tasks.filter(function (t) { return t.client_id === c.id || mids.indexOf(t.matter_id) >= 0; });
+    var tabs = ['Timeline', 'Matters', 'Money', 'Documents', 'Appointments & hearings', 'Tasks', 'Emails'];
+    var body = '';
+    if (tab === 'Timeline') {
+      var items = [];
+      leads.forEach(function (l) { items.push([l.created_at, 'Enquiry: ' + (l.service || l.subject || FORMS[l.form] || ''), l.source || '', '#inbox']); });
+      ms.forEach(function (m) { items.push([m.created_at, 'Matter opened: ' + m.ref + ' ' + m.title, m.stage, '#matter=' + m.id]); });
+      appts.forEach(function (a) { items.push([a.starts_at, a.title, kindLabel(a.kind) + ' · ' + a.status, '#appointments']); });
+      hs.forEach(function (h) { if (h.starts_at) items.push([h.starts_at, 'Hearing: ' + h.employee_name, lbl(HSTATUS, h.status), '#hearings']); });
+      inv.forEach(function (i) { items.push([i.issue_date, 'Invoice ' + i.number + ': ' + R2(invTotal(i)), invState(i).label, '#quotes']); });
+      pays.forEach(function (p) { items.push([p.received_on, 'Payment received: ' + R2(p.amount), p.account === 'trust' ? 'Trust' : 'Fees', '#payments']); });
+      docs.forEach(function (d) { items.push([d.created_at, 'Document: ' + d.name, d.folder, '#documents']); });
+      (S.clientNotes && S.clientNotes[c.id] || []).forEach(function (n) { items.push([n.created_at, 'File note: ' + n.body.slice(0, 160), (byId(S.matters, n.matter_id) || {}).ref || '', '#matter=' + n.matter_id]); });
+      if (!S.clientNotes || !S.clientNotes[c.id]) { S.clientNotes = S.clientNotes || {}; S.clientNotes[c.id] = []; if (mids.length) sb.from('matter_notes').select('*').in('matter_id', mids).order('created_at', { ascending: false }).limit(100).then(function (r) { if (!r.error) { S.clientNotes[c.id] = r.data; if (location.hash === '#client=' + c.id) render(); } }); }
+      items.sort(function (a, b) { return D(b[0]) - D(a[0]); });
+      body = '<div class="tl">' + (items.map(function (x) { return '<div class="it"><span class="mono">' + fmt(x[0]) + '</span><div><a href="' + x[3] + '">' + esc(x[1]) + '</a>' + (x[2] ? '<div class="meta">' + esc(x[2]) + '</div>' : '') + '</div></div>'; }).join('') || empty('Nothing recorded for this client yet.')) + '</div>' +
+        '<h3 style="margin:18px 0 6px">Change history</h3>' + historyList(S.activity.filter(function (a) { return a.client_id === c.id; }).slice(0, 30), 'client', c.id);
+    }
+    if (tab === 'Matters') body = '<div style="margin-bottom:10px"><button class="btn pri" data-act="new-matter" data-client="' + c.id + '">New matter</button></div><div class="tbl"><table><tr><th>Matter</th><th>Type</th><th>Stage</th><th>Next step</th><th>Attorney</th></tr>' + (ms.map(function (m) { return '<tr class="click" data-matter="' + m.id + '"><td><span class="mono">' + esc(m.ref) + '</span><br><b>' + esc(m.title) + '</b></td><td>' + esc(m.dispute_type || '') + '</td><td>' + stagePill(m.stage) + '</td><td>' + (m.next_date ? esc(m.next_step || '') + ' · ' + fmt(m.next_date) : '—') + '</td><td>' + esc(m.assigned_email ? staffName(m.assigned_email) : m.attorney || '—') + '</td></tr>'; }).join('') || '<tr><td colspan="5">' + empty('No matters yet.') + '</td></tr>') + '</table></div>';
+    if (tab === 'Money') body = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn pri" data-act="new-invoice" data-client="' + c.id + '">New invoice</button><button class="btn" data-act="new-quote" data-client="' + c.id + '">New quote</button><button class="btn" data-act="new-payment-client" data-client="' + c.id + '">Record payment</button></div>' +
+      '<div class="tbl"><table><tr><th>Date</th><th>Item</th><th style="text-align:right">Amount</th><th>Status</th></tr>' +
+      S.quotes.filter(function (q) { return q.client_id === c.id; }).map(function (q) { return '<tr class="click" data-act="open-doc" data-kind="quote" data-id="' + q.id + '"><td class="mono">' + fmt(q.issue_date) + '</td><td>Quote ' + esc(q.number) + '</td><td class="mono" style="text-align:right">' + R2(totals(itemsOf('quote', q.id), q.vat_rate).total) + '</td><td>' + quotePill(q.status) + '</td></tr>'; }).join('') +
+      inv.map(function (i) { var st = invState(i); return '<tr class="click" data-act="open-doc" data-kind="invoice" data-id="' + i.id + '"><td class="mono">' + fmt(i.issue_date) + '</td><td>Invoice ' + esc(i.number) + '</td><td class="mono" style="text-align:right">' + R2(invTotal(i)) + '</td><td>' + pill(st.label, st.cls) + '</td></tr>'; }).join('') +
+      pays.map(function (p) { return '<tr class="click" data-act="open-payment" data-id="' + p.id + '"><td class="mono">' + fmt(p.received_on) + '</td><td>Payment (' + (p.account === 'trust' ? 'trust' : 'fees') + ')</td><td class="mono" style="text-align:right">' + R2(p.amount) + '</td><td>' + pill('Received', 'p-green') + '</td></tr>'; }).join('') + '</table></div>';
+    if (tab === 'Documents') body = '<div style="margin-bottom:10px"><button class="btn pri" data-act="upload" data-client="' + c.id + '">Upload files</button></div>' + docTable(docs);
+    if (tab === 'Appointments & hearings') body = '<div style="display:flex;gap:8px;margin-bottom:10px"><button class="btn pri" data-act="new-appt-client" data-client="' + c.id + '">New appointment</button></div><div class="list">' + (appts.slice().sort(function (a, b) { return D(b.starts_at) - D(a.starts_at); }).map(function (a) { return '<div class="row" style="align-items:center">' + dateBox(a.starts_at) + '<div class="grow"><b>' + esc(a.title) + '</b><div class="meta">' + fmtT(a.starts_at) + ' · ' + kindLabel(a.kind) + (a.location ? ' · ' + esc(a.location) : '') + '</div></div>' + pill(a.status) + '<button class="btn sm" data-appt="' + a.id + '">Open</button></div>'; }).join('') || empty('No appointments.')) + '</div>' + (hs.length ? '<h3 style="margin:16px 0 6px">Hearings</h3>' + hearingRows(hs) : '');
+    if (tab === 'Tasks') body = '<div style="margin-bottom:10px"><button class="btn pri" data-act="new-task" data-client="' + c.id + '">New task</button></div>' + taskList(ts);
+    if (tab === 'Emails') body = clientEmails(c);
+    return '<div><a href="#clients">← All clients</a></div>' + head({ individual: 'Individual', employer: 'Employer', union: 'Trade union' }[c.kind] + (c.id_or_reg_no ? ' · ' + esc(c.id_or_reg_no) : ''), esc(c.name), [c.contact_person, c.phone, c.email, c.address].filter(Boolean).map(esc).join(' · '), '<button class="btn pri" data-act="edit-client" data-id="' + c.id + '">Edit client</button>') +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' + phoneLinks(c.phone, c.email) + pill('FICA: ' + { done: 'done', partial: 'partial', outstanding: 'outstanding' }[c.fica_status], c.fica_status === 'done' ? 'p-green' : 'p-amber') + pill(c.popia_consent ? 'POPIA signed' : 'POPIA outstanding', c.popia_consent ? 'p-green' : 'p-red') + (c.fee_plan ? pill(c.fee_plan) : '') + '</div>' +
+      '<div class="grid g4"><div class="panel stat"><b>' + ms.filter(function (m) { return m.stage !== 'Closed'; }).length + '</b><span>Open matters (' + ms.length + ' in total)</span></div><div class="panel stat"><b' + (owed ? ' style="color:var(--red)"' : '') + '>' + R2(owed) + '</b><span>Owed</span></div><div class="panel stat"><b>' + R2(trust) + '</b><span>Trust money received</span></div><div class="panel stat"><b>' + ts.filter(function (t) { return t.status === 'open'; }).length + '</b><span>Open tasks</span></div></div>' +
+      conflictPanel(c.name, { client: c.id, lead: c.lead_id }) +
+      '<div class="panel"><div class="tabs" role="tablist">' + tabs.map(function (x) { return '<button role="tab" class="' + (x === tab ? 'on' : '') + '" data-ctab="' + x + '">' + x + '</button>'; }).join('') + '</div><div style="padding-top:14px">' + body + '</div></div>';
+  }
+  function clientEmails(c) {
+    if (!c.email) return '<p class="meta">Add an email address to this client to find their emails.</p>';
+    if (S.mail.state === 'unconfigured') return '<p class="meta">Connect the info@ mailbox (Company settings → Email) to see this client’s emails here.</p>';
+    var cache = S.mailSearch = S.mailSearch || {}, key = 'c:' + c.id, x = cache[key];
+    if (!x) { cache[key] = { loading: true }; api('/api/mail?action=search&q=' + encodeURIComponent(c.email)).then(function (j) { cache[key] = j.configured === false ? { error: 'unconfigured' } : j.error ? { error: j.error } : { list: j.messages || [] }; if (location.hash === '#client=' + c.id) render(); }); return '<p class="meta">Searching the mailbox…</p>'; }
+    if (x.loading) return '<p class="meta">Searching the mailbox…</p>';
+    if (x.error) return x.error === 'unconfigured' ? '<p class="meta">Connect the info@ mailbox to see this client’s emails here.</p>' : '<div class="callout p-red">' + esc(x.error) + '</div>';
+    return '<div class="list">' + (x.list.map(function (e) { return '<button class="row" data-act="matter-mail-open" data-uid="' + e.uid + '" style="border:0;border-bottom:1px solid var(--line);background:none;text-align:left;cursor:pointer;width:100%"><div class="grow"><b>' + esc(e.subject) + '</b><div class="meta">' + esc(who(e.from)) + ' · ' + fmtDT(e.date) + '</div></div></button>'; }).join('') || empty('No emails from or mentioning ' + esc(c.email) + '.')) + '</div>';
+  }
+  P2['edit-client'] = function (el) { editClient(byId(S.clients, el.dataset.id)); };
+  P2['new-payment-client'] = function (el) { editPayment(null, { client_id: el.dataset.client }); };
+  P2['new-appt-client'] = function (el) { editAppt(null, { client_id: el.dataset.client }); };
+  document.addEventListener('click', function (e) { var b = e.target.closest('[data-ctab]'); if (!b) return; S.ui.cTab = b.dataset.ctab; render(); });
+
+  /* ----- Stage assistant: proposes the next time limit, dates and tasks ----- */
+  var STAGE_HELP = {
+    'Referred': { intro: 'The dispute has been referred. The CCMA or council must try to resolve it within 30 days.', fields: [{ k: 'sa_date', label: 'Date the referral was served / filed', type: 'date', def: function () { return ymd(today()); } }, { k: 'sa_next', label: 'Conciliation set-down date (if known)', type: 'date' }],
+      tasks: [['Keep proof of service of the referral on file', 2], ['Diarise the conciliation and confirm the date with the client', 5]],
+      apply: function (v) { var p = { key_rule: 'con', key_date: v.sa_date }; if (v.sa_next) { p.next_step = 'Conciliation'; p.next_date = v.sa_next; } return p; } },
+    'Conciliation': { intro: 'Conciliation is set down. Prepare the client and get a settlement mandate.', fields: [{ k: 'sa_next', label: 'Conciliation date', type: 'date', def: function (m) { return m.next_date || ''; } }],
+      tasks: [['Get a written settlement mandate from the client', -2, 'sa_next'], ['Prepare settlement figures and documents for conciliation', -3, 'sa_next']],
+      apply: function (v) { return v.sa_next ? { next_step: 'Conciliation', next_date: v.sa_next } : {}; } },
+    'Arbitration': { intro: 'Conciliation failed. The 90-day clock to request arbitration or refer to the Labour Court runs from the certificate of outcome.', fields: [{ k: 'sa_date', label: 'Date of the certificate of outcome', type: 'date', def: function () { return ymd(today()); } }, { k: 'sa_next', label: 'Arbitration date (if known)', type: 'date' }],
+      tasks: [['File LRA Form 7.13 (request for arbitration) or refer to the Labour Court', 14], ['Decide on legal representation (CCMA Rule 25) and apply if needed', 21], ['Prepare and paginate the bundle of documents', 30]],
+      apply: function (v) { var p = { key_rule: 'arb', key_date: v.sa_date }; if (v.sa_next) { p.next_step = 'Arbitration hearing'; p.next_date = v.sa_next; } return p; } },
+    'Award': { intro: 'The award has been issued. A review must be filed within 6 weeks of receiving it.', fields: [{ k: 'sa_date', label: 'Date the award was received', type: 'date', def: function () { return ymd(today()); } }, { k: 'sa_default', label: 'The award was made in the client’s absence (default award)', type: 'checkbox' }],
+      tasks: [['Send the award to the client with advice on review or compliance', 3], ['Diarise compliance with the award (or enforcement)', 14]],
+      apply: function (v, m) { return { key_rule: 'rev', key_date: v.sa_date, next_step: 'Decide on review or enforcement', next_date: ymd(addDays(D(v.sa_date), 21)) }; },
+      extra: async function (v, m) { if (v.sa_default) { var r = await sb.from('deadlines').insert({ matter_id: m.id, title: 'Apply to rescind the default award (CCMA Rule 32, 14 days)', due_date: ymd(addDays(D(v.sa_date), 14)) }).select().single(); if (!r.error) S.deadlines.push(r.data); } } },
+    'Review / enforce': { intro: 'Review or enforcement. Check the security and record requirements.', fields: [],
+      tasks: [['File the review application (notice of motion and founding affidavit)', 7], ['Request the record of the arbitration (Rule 7A)', 7], ['Lodge security for the award (s145(7)) if the employer is reviewing', 7]],
+      apply: function () { return {}; } }
+  };
+  function stageAssistant(m, stage) {
+    var setStage = async function (patch) {
+      var r = await sb.from('matters').update(Object.assign({ stage: stage }, patch || {})).eq('id', m.id).select().single();
+      if (r.error) return dbErr(r);
+      upsertLocal(S.matters, r.data); await syncMatterNext(r.data); return r.data;
+    };
+    if (stage === 'Closed') { setStage().then(function (u) { if (u && u.id) { toast('Stage: Closed'); render(); closeMatterChecklist(u); } }); return; }
+    var h = STAGE_HELP[stage];
+    if (!h) { setStage().then(function (u) { if (u && u.id) { toast('Stage: ' + stage); render(); } }); return; }
+    var vals = {}; h.fields.forEach(function (f) { if (f.def) vals[f.k] = f.def(m); });
+    var who = m.assigned_email || (S.user && S.user.email);
+    openForm({
+      title: m.ref + ' → ' + stage, saveLabel: 'Move and set up', fields: h.fields, values: vals,
+      extra: '<div class="fld full"><p class="sub" style="margin:0">' + esc(h.intro) + '</p></div>' +
+        (h.tasks.length ? '<div class="fld full"><span class="lbl">Create these tasks for ' + esc(staffName(who)) + '</span>' + h.tasks.map(function (t, i) { return '<label class="check" style="font-weight:400"><input type="checkbox" class="sa-task" data-i="' + i + '" checked> ' + esc(t[0]) + '</label>'; }).join('') + '</div>' : '') +
+        '<div class="fld full"><button type="button" class="btn sm" id="sa-skip">Just change the stage</button></div>',
+      save: async function (d) {
+        var patch = h.apply(d, m) || {};
+        var u = await setStage(patch); if (typeof u === 'string') return u;
+        var base = D(d.sa_date || ymd(today()));
+        var rows = Array.prototype.filter.call(document.querySelectorAll('.sa-task'), function (c) { return c.checked; }).map(function (c) { var t = h.tasks[+c.dataset.i]; var from = t[2] && d[t[2]] ? D(d[t[2]]) : base; return { title: t[0], due_date: ymd(addDays(from, t[1])), assigned_to: who, matter_id: m.id, client_id: m.client_id }; });
+        if (rows.length) { var tr = await sb.from('tasks').insert(rows).select(); if (!tr.error) S.tasks = S.tasks.concat(tr.data); }
+        if (h.extra) await h.extra(d, m);
+        toast(m.ref + ' moved to ' + stage + (rows.length ? ' · ' + rows.length + ' tasks added' : '')); render();
+      }
+    });
+    $('sa-skip').onclick = async function () { var u = await setStage(); $('modal-root').innerHTML = ''; if (u && u.id) { toast('Stage: ' + stage); render(); } };
+  }
+
+  /* ----- Search everything ----- */
+  function searchAll(q) {
+    var n = q.toLowerCase().trim(); if (n.length < 2) return [];
+    var has = function () { for (var i = 0; i < arguments.length; i++) if (arguments[i] && String(arguments[i]).toLowerCase().indexOf(n) >= 0) return true; return false; };
+    var digits = n.replace(/\D/g, ''), phone = function (p) { return digits.length >= 6 && p && String(p).replace(/\D/g, '').indexOf(digits) >= 0; };
+    var g = [];
+    var push = function (grp, items) { if (items.length) g.push([grp, items.slice(0, 8)]); };
+    push('Clients', S.clients.filter(function (c) { return has(c.name, c.contact_person, c.email, c.id_or_reg_no) || phone(c.phone); }).map(function (c) { return ['#client=' + c.id, c.name, [c.contact_person, c.phone, c.email].filter(Boolean).join(' · ')]; }));
+    push('Matters', S.matters.filter(function (m) { return has(m.ref, m.title, m.case_no, m.other_party, m.dispute_type); }).map(function (m) { return ['#matter=' + m.id, m.ref + ' · ' + m.title, [m.case_no, m.stage, clientName(m.client_id)].filter(Boolean).join(' · ')]; }));
+    push('Enquiries', S.leads.filter(function (l) { return has(leadName(l), l.email, l.subject, l.service, l.message) || phone(l.phone); }).map(function (l) { return ['lead:' + l.id, leadName(l), [FORMS[l.form], leadLabel(l.status), fmt(l.created_at)].join(' · ')]; }));
+    push('Invoices & quotes', S.invoices.filter(function (i) { return has(i.number) || has(clientName(i.client_id)) && n.length > 3; }).map(function (i) { return ['doc:invoice:' + i.id, 'Invoice ' + i.number, clientName(i.client_id) + ' · ' + R2(invTotal(i)) + ' · ' + invState(i).label]; }).concat(S.quotes.filter(function (x) { return has(x.number); }).map(function (x) { return ['doc:quote:' + x.id, 'Quote ' + x.number, clientName(x.client_id)]; })));
+    push('Hearings', S.hearings.filter(function (h) { return has(h.employee_name, h.charges); }).map(function (h) { return ['hearing:' + h.id, 'Hearing: ' + h.employee_name, clientName(h.client_id) + (h.starts_at ? ' · ' + fmt(h.starts_at) : '')]; }));
+    push('Tasks', S.tasks.filter(function (t) { return has(t.title, t.notes); }).map(function (t) { return ['task:' + t.id, t.title, (t.assigned_to ? 'For ' + staffName(t.assigned_to) : '') + (t.due_date ? ' · due ' + fmt(t.due_date) : '') + (t.status === 'done' ? ' · done' : '')]; }));
+    push('Documents', S.docs.filter(function (d) { return has(d.name, d.folder); }).map(function (d) { return ['docfile:' + d.id, d.name, d.folder + (d.client_id ? ' · ' + clientName(d.client_id) : '')]; }));
+    push('Appointments', S.appts.filter(function (a) { return has(a.title, a.location); }).map(function (a) { return ['appt:' + a.id, a.title, fmtDT(a.starts_at)]; }));
+    return g;
+  }
+  function showSearch(q) {
+    var g = searchAll(q), root = $('modal-root');
+    if (!q.trim()) { closePop(); return; }
+    root.innerHTML = '<div class="pop" id="pop"><div class="ph"><b>Results for “' + esc(q) + '”</b><span class="meta">Enter opens the first · Esc closes</span></div>' +
+      (g.length ? g.map(function (x) { return '<div class="grp">' + x[0] + '</div>' + x[1].map(function (r) { return '<button class="hit" data-go="' + esc(r[0]) + '"><span style="min-width:0"><b>' + esc(r[1]) + '</b><span class="meta" style="display:block">' + esc(r[2] || '') + '</span></span></button>'; }).join(''); }).join('') : '<div class="empty">Nothing found.</div>') +
+      (S.mail.state === 'ok' && q.trim().length >= 4 ? '<div class="grp">Emails</div><button class="hit" data-go="mail:' + esc(q.trim()) + '"><span>Search info@ for “' + esc(q.trim()) + '”</span></button>' : '') + '</div>';
+  }
+  function closePop() { var p = $('pop'); if (p) $('modal-root').innerHTML = ''; }
+  async function go(target) {
+    closePop(); $('gsearch').value = ''; $('gsearch').blur();
+    var p = target.split(':');
+    if (target[0] === '#') { location.hash = target.slice(1); return; }
+    if (p[0] === 'lead') { var l = byId(S.leads, p[1]); S.ui.inboxSel = l.id; S.ui.inboxTab = 'All'; location.hash = 'inbox'; render(); return; }
+    if (p[0] === 'doc') return editDoc(p[1], byId(S[p[1] === 'quote' ? 'quotes' : 'invoices'], p[2]));
+    if (p[0] === 'hearing') return editHearing(byId(S.hearings, p[1]));
+    if (p[0] === 'task') return editTask(byId(S.tasks, p[1]));
+    if (p[0] === 'appt') return editAppt(byId(S.appts, p[1]));
+    if (p[0] === 'docfile') return P2['doc-open']({ dataset: { id: p[1] } });
+    if (p[0] === 'mail') { var q = target.slice(5); var j = await api('/api/mail?action=search&q=' + encodeURIComponent(q)); S.ui.inboxTab = 'Email (info@)'; S.mail.list = j.messages || S.mail.list; location.hash = 'inbox'; render(); toast((j.messages || []).length + ' emails found for “' + q + '”'); }
+  }
+  var gs = $('gsearch'), gsT;
+  gs.addEventListener('input', function () { clearTimeout(gsT); gsT = setTimeout(function () { showSearch(gs.value); }, 120); });
+  gs.addEventListener('keydown', function (e) { if (e.key === 'Escape') { gs.value = ''; closePop(); gs.blur(); } if (e.key === 'Enter') { var f = document.querySelector('#pop [data-go]'); if (f) go(f.dataset.go); } });
+  document.addEventListener('keydown', function (e) { if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && !$('mform')) { e.preventDefault(); gs.focus(); } });
+  document.addEventListener('click', function (e) { var b = e.target.closest('[data-go]'); if (b) { go(b.dataset.go); return; } if ($('pop') && !e.target.closest('#pop') && e.target !== gs && !e.target.closest('#bell')) closePop(); });
+
+  /* ----- Notifications ----- */
+  function unseen() { var seen = S.me && S.me.last_seen_activity ? D(S.me.last_seen_activity) : new Date(0); return S.activity.filter(function (a) { return D(a.at) > seen && (a.actor || '').toLowerCase() !== myEmail(); }); }
+  function updateBell() { var n = unseen().length, b = $('bell-n'); b.textContent = n > 99 ? '99+' : n; b.classList.toggle('hidden', !n); }
+  function showBell() {
+    var u = unseen(), ids = u.map(function (a) { return a.id; });
+    var list = S.activity.slice(0, 40);
+    $('modal-root').innerHTML = '<div class="pop" id="pop"><div class="ph"><b>Notifications</b><span style="display:flex;gap:8px;align-items:center"><span class="meta">' + u.length + ' new</span>' + (u.length ? '<button class="btn sm" id="bell-seen">Mark all read</button>' : '') + '</span></div>' +
+      (list.map(function (a) { var mine = (a.for_email || '').toLowerCase() === myEmail(); return '<a class="hit' + (ids.indexOf(a.id) >= 0 ? ' unseen' : '') + '" href="' + ENTITY_LINK(a) + '"><span style="min-width:0;flex:1">' + (mine && a.entity === 'tasks' && a.action !== 'done' ? '<b style="color:var(--red)">For you · </b>' : '') + esc(a.summary) + '<span class="meta" style="display:block">' + esc(actorLabel(a)) + ' · ' + fmtDT(a.at) + '</span></span></a>'; }).join('') || '<div class="empty">Nothing yet. New enquiries, payments, assignments and changes appear here.</div>') + '</div>';
+    var sb2 = $('bell-seen'); if (sb2) sb2.onclick = markSeen;
+  }
+  async function markSeen() { var r = await sb.rpc('mark_activity_seen'); if (!r.error && r.data) { S.me.last_seen_activity = r.data; } else { S.me.last_seen_activity = new Date().toISOString(); } updateBell(); if ($('pop')) showBell(); }
+  $('bell').addEventListener('click', function (e) { e.stopPropagation(); if ($('pop') && $('pop').querySelector('.ph b').textContent === 'Notifications') { closePop(); return; } showBell(); });
+  document.addEventListener('click', function (e) { if (e.target.closest('#pop a.hit')) setTimeout(closePop, 0); });
+  var actTimer = null;
+  function startActivity() {
+    updateBell();
+    if (actTimer) return;
+    actTimer = setInterval(async function () {
+      if (document.hidden || !S.user) return;
+      var maxId = S.activity.reduce(function (m, a) { return Math.max(m, a.id); }, 0);
+      var r = await sb.from('activity').select('*').gt('id', maxId).order('id', { ascending: false }).limit(50);
+      if (r.error || !r.data.length) return;
+      S.activity = r.data.concat(S.activity);
+      var fresh = r.data.filter(function (a) { return (a.actor || '').toLowerCase() !== myEmail(); });
+      updateBell();
+      if (fresh.length) {
+        toast(fresh.length === 1 ? fresh[0].summary : fresh.length + ' new updates: ' + fresh[0].summary);
+        var tables = {}; fresh.forEach(function (a) { tables[a.entity] = 1; });
+        var map = { leads: 'leads', appointments: 'appts', payments: 'payments', tasks: 'tasks', matters: 'matters', invoices: 'invoices', documents: 'docs', clients: 'clients', hearings: 'hearings' };
+        await Promise.all(Object.keys(tables).filter(function (t) { return map[t]; }).map(function (t) { return sb.from(t).select('*').then(function (x) { if (!x.error) S[map[t]] = x.data; }); }));
+        if (!$('mform')) render();
+      }
+    }, 60000);
+  }
+
   /* ---------- Router ---------- */
-  function current() { var h = location.hash.slice(1); if (h.indexOf('matter=') === 0) return 'matters'; if (h.indexOf('lead=') === 0) return 'inbox'; return V[h] ? h : 'dashboard'; }
+  function current() { var h = location.hash.slice(1); if (h.indexOf('matter=') === 0) return 'matters'; if (h.indexOf('client=') === 0) return 'clients'; if (h.indexOf('lead=') === 0) return 'inbox'; return V[h] ? h : 'dashboard'; }
   function render() {
     var h = location.hash.slice(1), cur = current();
     renderNav(cur);
     if (h.indexOf('lead=') === 0) { var ref = h.slice(5); var l = S.leads.find(function (x) { return x.ref === ref || x.id === ref; }); if (l) { S.ui.inboxSel = l.id; markSeen(l); } history.replaceState(null, '', '#inbox'); }
-    if (h.indexOf('matter=') === 0) {
+    if (h.indexOf('client=') === 0) {
+      var cl = byId(S.clients, h.slice(7));
+      $('view').innerHTML = cl ? clientPage(cl) : empty('That client was not found. <a href="#clients">All clients</a>');
+    } else if (h.indexOf('matter=') === 0) {
       var m = byId(S.matters, h.slice(7));
       if (!m) { $('view').innerHTML = empty('That matter was not found. <a href="#matters">All matters</a>'); return; }
       if (S.ui.matterTab === 'File notes' && !S.notes[m.id]) loadNotes(m.id).then(render);
@@ -1810,9 +2080,9 @@
     if (el.dataset.inboxtab) { S.ui.inboxTab = el.dataset.inboxtab; return render(); }
     if (el.dataset.mtab) { S.ui.matterTab = el.dataset.mtab; return render(); }
     if (el.dataset.week) { var dw = +el.dataset.week; S.ui.weekStart = dw ? addDays(S.ui.weekStart || weekStart(new Date()), dw) : weekStart(new Date()); return render(); }
-    if (el.dataset.stage) { var mid = location.hash.slice(8); var prevStage = (byId(S.matters, mid) || {}).stage; var r4 = await sb.from('matters').update({ stage: el.dataset.stage }).eq('id', mid).select().single(); if (r4.error) { toast(r4.error.message); return; } upsertLocal(S.matters, r4.data); toast('Stage: ' + el.dataset.stage); render(); if (el.dataset.stage === 'Closed' && prevStage !== 'Closed') closeMatterChecklist(r4.data); return; }
+    if (el.dataset.stage) { var mm = byId(S.matters, location.hash.slice(8)); if (mm && mm.stage !== el.dataset.stage) stageAssistant(mm, el.dataset.stage); return; }
     if (el.dataset.lead) { e.preventDefault(); var l = byId(S.leads, el.dataset.lead); S.ui.inboxSel = l.id; markSeen(l); if (current() !== 'inbox') location.hash = 'inbox'; else render(); return; }
-    if (el.dataset.client) { e.preventDefault(); $('modal-root').innerHTML = ''; return editClient(byId(S.clients, el.dataset.client)); }
+    if (el.dataset.client) { e.preventDefault(); $('modal-root').innerHTML = ''; location.hash = 'client=' + el.dataset.client; return; }
     if (el.dataset.matter) { location.hash = 'matter=' + el.dataset.matter; return; }
     if (el.dataset.appt) { $('modal-root').innerHTML = ''; return editAppt(byId(S.appts, el.dataset.appt)); }
   });
@@ -1829,7 +2099,7 @@
     S.user = res.data.session.user;
     $('who').textContent = S.user.email;
     show('app');
-    if (await loadAll()) render();
+    if (await loadAll()) { render(); startActivity(); }
   }
   $('login-form').addEventListener('submit', async function (e) {
     e.preventDefault();
