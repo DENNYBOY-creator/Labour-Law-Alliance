@@ -2,6 +2,31 @@
 (function () {
   'use strict';
 
+  /* ---------- Anonymous visit counting (no cookies) ----------
+     Remembers, for this browser tab only, how the visitor first arrived (search engine, social media, direct)
+     so an enquiry can show where it came from. Skipped if the visitor turned analytics off. */
+  var visit = (function () {
+    var v = null;
+    try { v = JSON.parse(sessionStorage.getItem('lla_visit')); } catch (e) {}
+    if (!v) {
+      var q = new URLSearchParams(location.search);
+      v = { s: Math.random().toString(36).slice(2, 12), r: document.referrer || '', us: q.get('utm_source') || '', um: q.get('utm_medium') || '', uc: q.get('utm_campaign') || '', lp: location.pathname, first: true };
+      try { sessionStorage.setItem('lla_visit', JSON.stringify(v)); } catch (e) {}
+    } else v.first = false;
+    return v;
+  })();
+  (function () {
+    var c = null;
+    try { c = JSON.parse(localStorage.getItem('lla_cookie_consent')); } catch (e) {}
+    if (c && c.analytics === false) return;
+    if (/^\/(admin|api)/.test(location.pathname)) return;
+    var body = JSON.stringify({ p: location.pathname, r: visit.first ? visit.r : '', us: visit.first ? visit.us : '', um: visit.first ? visit.um : '', uc: visit.first ? visit.uc : '', s: visit.s, l: visit.first, w: window.innerWidth });
+    try {
+      if (navigator.sendBeacon) navigator.sendBeacon('/api/track', new Blob([body], { type: 'application/json' }));
+      else fetch('/api/track', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true });
+    } catch (e) {}
+  })();
+
   /* ---------- Footer year ---------- */
   var y = document.getElementById('year');
   if (y) y.textContent = new Date().getFullYear();
@@ -150,6 +175,7 @@
 
       var data = { form: form.dataset.form };
       new FormData(form).forEach(function (v, k) { data[k] = String(v); });
+      data.visit_ref = visit.r; data.visit_us = visit.us; data.visit_um = visit.um; data.visit_landing = visit.lp;
 
       btn.disabled = true;
       var label = btn.textContent;

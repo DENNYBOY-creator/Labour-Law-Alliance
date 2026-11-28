@@ -177,7 +177,7 @@
     { id: 'quotes', label: 'Quotes & invoices', n: function () { return S.invoices.filter(function (i) { return invState(i).key === 'overdue'; }).length; }, hot: true },
     { id: 'payments', label: 'Payments' },
     { grp: 'Growth' },
-    { id: 'website', label: 'Website', soon: true },
+    { id: 'website', label: 'Website' },
     { grp: 'Firm' },
     { id: 'documents', label: 'Document centre' },
     { id: 'settings', label: 'Company settings' }
@@ -222,12 +222,13 @@
 
   /* ---------- Inbox ---------- */
   V.inbox = function () {
-    var tabs = ['All', 'Unread', 'Bookings', 'Enquiries', 'Contact messages'];
+    var tabs = ['All', 'Unread', 'Bookings', 'Enquiries', 'Contact messages', 'Email (info@)'];
     var t = S.ui.inboxTab;
+    if (t === 'Email (info@)') return head('Inbox', 'Email and website submissions', 'Website forms and the info@ mailbox in one place.') + '<div class="subtabs">' + tabs.map(function (x) { return '<button data-inboxtab="' + x + '" class="' + (x === t ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>' + mailView();
     var list = S.leads.filter(function (l) { return t === 'All' || (t === 'Unread' && !l.seen_at) || (t === 'Bookings' && l.form === 'booking') || (t === 'Enquiries' && l.form === 'enquiry') || (t === 'Contact messages' && l.form === 'contact'); });
     var sel = byId(S.leads, S.ui.inboxSel) || null;
     return head('Inbox', 'Website submissions', 'Every contact, consultation and booking form from the website arrives here and is also emailed to info@labourlawalliance.co.za.') +
-      '<div class="banner"><span class="led"></span><b>Website forms</b><span class="meta">Live</span><span class="led off" style="margin-left:12px"></span><b>info@ mailbox</b><span class="meta">Reading domain email inside the CRM comes in phase 3</span></div>' +
+      '<div class="banner"><span class="led"></span><b>Website forms</b><span class="meta">Live</span>' + mailBanner() + '</div>' +
       '<div class="subtabs">' + tabs.map(function (x) { return '<button data-inboxtab="' + x + '" class="' + (x === t ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>' +
       '<div class="panel inbox"><div class="ilist">' + (list.map(function (l) {
         var what = l.form === 'booking' ? (l.service || 'Consultation') + (l.preferred_date ? ' · ' + l.preferred_date + ' ' + (l.preferred_time || '') : '') : (l.subject || l.service || (l.message || '').slice(0, 80));
@@ -926,10 +927,11 @@
   };
   V.settings = function () {
     var tab = S.ui.sTab || 'Company details', st = S.settings || {};
-    var tabs = '<div class="subtabs">' + ['Company details', 'Banking & invoicing', 'Users'].map(function (x) { return '<button data-stab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
+    var tabs = '<div class="subtabs">' + ['Company details', 'Banking & invoicing', 'Users', 'Email', 'Integrations'].map(function (x) { return '<button data-stab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>';
     var canEdit = canMoney();
     var body;
-    if (tab === 'Users') {
+    if (tab === 'Email' || tab === 'Integrations') body = settings3(tab);
+    else if (tab === 'Users') {
       body = '<div class="panel"><div class="hd"><h2>People with access</h2>' + (isPartner() ? '<button class="btn pri" data-act="invite-staff">Invite staff member</button>' : '') + '</div><div class="tbl"><table><tr><th>Name</th><th>Email</th><th>Role</th><th>Signed in before</th><th>Access</th><th></th></tr>' +
         S.staff.map(function (s) { return '<tr><td><b>' + esc(s.full_name || '—') + '</b></td><td class="mono">' + esc(s.email) + '</td><td>' + roleLabel(s.role) + '</td><td>' + (s.user_id ? pill('Yes', 'p-green') : pill('Not yet', 'p-amber')) + '</td><td>' + (s.active ? pill('Active', 'p-green') : pill('Removed', 'p-red')) + '</td><td>' + (isPartner() ? '<button class="btn sm" data-act="edit-staff" data-id="' + s.id + '">Edit</button>' : '') + '</td></tr>'; }).join('') + '</table></div>' +
         '<p class="meta" style="margin-top:10px">Public sign-up is closed: only people invited here can sign in. Invited staff get an email with a link to set up their login.</p></div>' +
@@ -1003,6 +1005,304 @@
     render();
   });
 
+  /* =====================================================================
+     PHASE 3: website analytics, Search Console, page optimiser, domain email
+     ===================================================================== */
+  S.mail = { state: 'idle', list: [], sel: null, msg: null };
+  S.web = { views: null, loading: false, gsc: null, gscLoading: false, audit: null, auditing: false, auditDone: 0, auditTotal: 0, days: 30 };
+  async function api(url, opts) {
+    var s = await sb.auth.getSession(); var token = s.data.session && s.data.session.access_token;
+    opts = opts || {}; opts.headers = Object.assign({ Authorization: 'Bearer ' + token }, opts.headers || {});
+    var r = await fetch(url, opts); var j = await r.json().catch(function () { return {}; });
+    if (!r.ok && !j.error) j.error = 'Request failed (' + r.status + ')';
+    return j;
+  }
+  function onView(id) { return current() === id; }
+
+  /* ----- Small SVG charts drawn to scale; colours come from the theme ----- */
+  function lineChart(labels, series) {
+    var W = 640, H = 190, pl = 40, pr = 10, pt = 10, pb = 24, n = labels.length;
+    var max = Math.max(1, Math.max.apply(null, series.reduce(function (a, s) { return a.concat(s.data); }, [])));
+    var step = Math.pow(10, Math.floor(Math.log10(max / 4 || 1))); var tick = Math.max(1, Math.ceil(max / 4 / step) * step); var top = tick * 4;
+    var x = function (i) { return pl + (n > 1 ? i * (W - pl - pr) / (n - 1) : 0); }, y = function (v) { return pt + (H - pt - pb) * (1 - v / top); };
+    var g = ''; for (var k = 0; k <= 4; k++) g += '<line x1="' + pl + '" x2="' + (W - pr) + '" y1="' + y(k * tick) + '" y2="' + y(k * tick) + '" stroke="var(--line)"/><text x="' + (pl - 6) + '" y="' + (y(k * tick) + 4) + '" text-anchor="end" fill="var(--muted)" font-size="11">' + (k * tick) + '</text>';
+    var marks = [0, Math.floor(n / 3), Math.floor(2 * n / 3), n - 1].filter(function (v, i, a) { return a.indexOf(v) === i; });
+    g += marks.map(function (i) { return '<text x="' + x(i) + '" y="' + (H - 6) + '" text-anchor="middle" fill="var(--muted)" font-size="11">' + esc(labels[i]) + '</text>'; }).join('');
+    g += series.map(function (s) { var pts = s.data.map(function (v, i) { return x(i).toFixed(1) + ',' + y(v).toFixed(1); }).join(' '); return (s.fill ? '<polygon points="' + x(0) + ',' + y(0) + ' ' + pts + ' ' + x(n - 1) + ',' + y(0) + '" fill="' + s.color + '" opacity=".14"/>' : '') + '<polyline points="' + pts + '" fill="none" stroke="' + s.color + '" stroke-width="2" stroke-linejoin="round"/>'; }).join('');
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block" role="img" aria-label="chart">' + g + '</svg>';
+  }
+  function bars(rows, unit) { var max = Math.max(1, Math.max.apply(null, rows.map(function (r) { return r[1]; }))); return rows.map(function (r) { return '<div class="row" style="align-items:center;padding:5px 0"><div class="grow" style="word-break:break-all">' + esc(r[0]) + '</div><div style="flex:0 0 110px" class="bar"><i style="width:' + (r[1] / max * 100) + '%"></i></div><span class="mono" style="width:56px;text-align:right">' + r[1] + (unit || '') + '</span></div>'; }).join('') || empty('No data yet.'); }
+  function countBy(arr, fn) { var m = {}; arr.forEach(function (x) { var k = fn(x); if (k == null || k === '') return; m[k] = (m[k] || 0) + 1; }); return Object.keys(m).map(function (k) { return [k, m[k]]; }).sort(function (a, b) { return b[1] - a[1]; }); }
+
+  /* ----- Visitors (from /api/track) ----- */
+  async function loadViews() {
+    if (S.web.loading) return; S.web.loading = true;
+    var since = addDays(today(), -(S.web.days - 1)).toISOString(), all = [], from = 0;
+    while (true) {
+      var r = await sb.from('page_views').select('created_at,path,source,device,country,city,session,landing').gte('created_at', since).order('created_at', { ascending: true }).range(from, from + 999);
+      if (r.error) { S.web.views = { error: r.error.message }; break; }
+      all = all.concat(r.data); if (r.data.length < 1000 || all.length >= 50000) { S.web.views = all; break; }
+      from += 1000;
+    }
+    S.web.loading = false; if (onView('website')) render();
+  }
+  function visitorsTab() {
+    var v = S.web.views;
+    if (!v) { loadViews(); return '<p class="meta">Loading visitor data…</p>'; }
+    if (v.error) return '<div class="callout p-red">' + esc(v.error) + '</div>';
+    var days = []; for (var i = S.web.days - 1; i >= 0; i--) days.push(ymd(addDays(today(), -i)));
+    var sessions = {}; v.forEach(function (p) { sessions[p.session || p.created_at] = p; });
+    var perDay = days.map(function (d) { var s = {}; v.forEach(function (p) { if (ymd(p.created_at) === d) s[p.session || p.created_at] = 1; }); return Object.keys(s).length; });
+    var viewsDay = days.map(function (d) { return v.filter(function (p) { return ymd(p.created_at) === d; }).length; });
+    var live = {}; v.forEach(function (p) { if (Date.now() - D(p.created_at) < 5 * 60000) live[p.session] = 1; });
+    var nSess = Object.keys(sessions).length, landings = v.filter(function (p) { return p.landing; });
+    var leads30 = S.leads.filter(function (l) { return D(l.created_at) >= addDays(today(), -(S.web.days - 1)) && l.source && l.source !== 'Phone call'; }).length;
+    return (v.length ? '' : '<div class="callout p-blue">Visitor counting started with this update. Numbers appear here as people visit the website.</div>') +
+      '<div class="grid g4"><div class="panel stat"><b>' + nSess + '</b><span>Visits, last ' + S.web.days + ' days</span></div><div class="panel stat"><b>' + v.length + '</b><span>Pages viewed</span></div><div class="panel stat"><b>' + Object.keys(live).length + '</b><span>On the site now</span></div><div class="panel stat"><b>' + (nSess ? (leads30 / nSess * 100).toFixed(1) : '0.0') + '%</b><span>Visits that sent an enquiry</span></div></div>' +
+      '<div class="panel"><div class="hd"><h2>Visits per day</h2><span class="meta"><span style="color:#d3a728">■</span> visits <span style="color:var(--blue)">■</span> page views</span></div>' + lineChart(days.map(function (d) { return fmt(d).replace(/ \d{4}$/, ''); }), [{ data: viewsDay, color: 'var(--blue)' }, { data: perDay, color: '#d3a728', fill: true }]) + '</div>' +
+      '<div class="grid g3"><div class="panel"><h2 style="margin-bottom:6px">Where visitors come from</h2>' + bars(countBy(landings, function (p) { return p.source; }).slice(0, 10)) + '</div><div class="panel"><h2 style="margin-bottom:6px">Most viewed pages</h2>' + bars(countBy(v, function (p) { return p.path; }).slice(0, 10)) + '</div><div class="panel"><h2 style="margin-bottom:6px">Devices</h2>' + bars(countBy(landings, function (p) { return { mobile: 'Phone', tablet: 'Tablet', desktop: 'Computer' }[p.device]; })) + '<h2 style="margin:14px 0 6px">Cities</h2>' + bars(countBy(landings, function (p) { return p.city ? p.city + (p.country && p.country !== 'ZA' ? ' (' + p.country + ')' : '') : null; }).slice(0, 8)) + '</div></div>' +
+      '<p class="meta">Counted without cookies or IP addresses. Visitors who switch analytics off in the cookie banner are not counted. Search engines and bots are ignored.</p>';
+  }
+  function sourcesTab() {
+    var v = S.web.views; if (!v) { loadViews(); }
+    var L = S.leads.filter(function (l) { return l.form !== 'manual'; });
+    var bySource = countBy(S.leads, function (l) { return l.source || (l.page ? 'Website (source not recorded)' : null); });
+    var byPage = countBy(S.leads, function (l) { return l.page; });
+    var conv = '';
+    if (v && !v.error && v.length) {
+      var land = countBy(v.filter(function (p) { return p.landing; }), function (p) { return p.path; });
+      conv = '<div class="panel"><div class="hd"><h2>Pages that turn visits into enquiries</h2><span class="meta">Last ' + S.web.days + ' days</span></div><div class="tbl"><table><tr><th>Page</th><th style="text-align:right">Visits starting here</th><th style="text-align:right">Enquiries</th><th style="text-align:right">Rate</th></tr>' +
+        land.slice(0, 15).map(function (r) { var n = L.filter(function (l) { return (l.landing_page || l.page) === r[0] && D(l.created_at) >= addDays(today(), -(S.web.days - 1)); }).length; return '<tr><td>' + esc(r[0]) + '</td><td class="mono" style="text-align:right">' + r[1] + '</td><td class="mono" style="text-align:right">' + n + '</td><td class="mono" style="text-align:right">' + (r[1] ? (n / r[1] * 100).toFixed(1) : '0') + '%</td></tr>'; }).join('') + '</table></div></div>';
+    }
+    return '<div class="grid g2"><div class="panel"><h2 style="margin-bottom:6px">Enquiries by source</h2>' + bars(bySource) + '</div><div class="panel"><h2 style="margin-bottom:6px">Enquiries by page</h2>' + bars(byPage.slice(0, 12)) + '</div></div>' + conv +
+      '<div class="panel"><div class="hd"><h2>Recent enquiries and where they came from</h2></div><div class="tbl"><table><tr><th>Received</th><th>Name</th><th>Source</th><th>First page</th><th>Form page</th><th>Stage</th></tr>' +
+      (S.leads.slice(0, 25).map(function (l) { return '<tr class="click" data-lead="' + l.id + '"><td class="mono">' + fmt(l.created_at) + '</td><td>' + esc(leadName(l)) + '</td><td>' + esc(l.source || '—') + '</td><td class="mono">' + esc(l.landing_page || '—') + '</td><td class="mono">' + esc(l.page || '—') + '</td><td>' + leadPill(l.status) + '</td></tr>'; }).join('') || '<tr><td colspan="6">' + empty('No enquiries yet.') + '</td></tr>') + '</table></div></div>' +
+      '<p class="meta">Website enquiries record the source from now on. Older ones show the page only. For phone, WhatsApp and walk-in enquiries, choose the source when you add them.</p>';
+  }
+
+  /* ----- Search Console and rankings (from /api/gsc) ----- */
+  async function loadGsc() { if (S.web.gscLoading) return; S.web.gscLoading = true; S.web.gsc = await api('/api/gsc?days=28'); S.web.gscLoading = false; if (onView('website') || onView('settings')) render(); }
+  function gscSetup(err) {
+    return (err ? '<div class="callout p-red">' + esc(err) + '</div>' : '') + '<div class="panel"><h2 style="margin-bottom:8px">Connect Google Search Console</h2><p class="sub" style="margin-bottom:10px">Search Console shows the Google searches your pages appear for, clicks, and your real Google positions. Connecting takes about ten minutes and is free.</p><ol style="margin:0;padding-left:20px;line-height:1.8">' +
+      '<li>Go to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a> and create a project (for example “LLA CRM”).</li>' +
+      '<li>Open <b>APIs &amp; Services → Library</b>, search for <b>Google Search Console API</b> and click <b>Enable</b>.</li>' +
+      '<li>Open <b>IAM &amp; Admin → Service Accounts</b>, create one (for example “crm-reader”), then on its <b>Keys</b> tab choose <b>Add key → JSON</b>. A key file downloads.</li>' +
+      '<li>In <a href="https://search.google.com/search-console/users?resource_id=sc-domain%3Alabourlawalliance.co.za" target="_blank" rel="noopener">Search Console → Settings → Users and permissions</a>, add the service account’s email address (it ends in <code>iam.gserviceaccount.com</code>) with <b>Restricted</b> permission.</li>' +
+      '<li>In <a href="https://vercel.com/" target="_blank" rel="noopener">Vercel</a> → project <b>labour</b> → <b>Settings → Environment Variables</b>, add <code>GSC_SERVICE_ACCOUNT</code>, paste the whole contents of the key file as the value, mark it <b>Sensitive</b>, and save. Then redeploy (Deployments → ⋯ → Redeploy).</li></ol><p class="meta" style="margin-top:10px">Keep the key file private. Paste it into Vercel only, never into an email or chat.</p></div>';
+  }
+  function gscTab() {
+    var g = S.web.gsc;
+    if (!g) { loadGsc(); return '<p class="meta">Checking Search Console…</p>'; }
+    if (!g.connected) return gscSetup(g.error);
+    var sum = function (a, k) { return a.reduce(function (s, r) { return s + r[k]; }, 0); };
+    var clicks = sum(g.byDate, 'clicks'), imp = sum(g.byDate, 'impressions'), pos = imp ? g.byDate.reduce(function (s, r) { return s + r.position * r.impressions; }, 0) / imp : 0;
+    return '<div class="banner"><span class="led"></span><b>Connected</b><span class="meta">' + esc(g.account) + ' · ' + fmt(g.start) + ' to ' + fmt(g.end) + ' (Google data runs about 2 days behind)</span></div>' +
+      '<div class="grid g4"><div class="panel stat"><b>' + clicks + '</b><span>Clicks from Google</span></div><div class="panel stat"><b>' + imp + '</b><span>Times shown in Google</span></div><div class="panel stat"><b>' + (imp ? (clicks / imp * 100).toFixed(1) : '0') + '%</b><span>Click-through rate</span></div><div class="panel stat"><b>' + (pos ? pos.toFixed(1) : '—') + '</b><span>Average position</span></div></div>' +
+      '<div class="panel"><div class="hd"><h2>Clicks and impressions per day</h2><span class="meta"><span style="color:#d3a728">■</span> clicks <span style="color:var(--blue)">■</span> impressions ÷ 10</span></div>' + lineChart(g.byDate.map(function (r) { return fmt(r.date).replace(/ \d{4}$/, ''); }), [{ data: g.byDate.map(function (r) { return Math.round(r.impressions / 10); }), color: 'var(--blue)' }, { data: g.byDate.map(function (r) { return r.clicks; }), color: '#d3a728', fill: true }]) + '</div>' +
+      '<div class="grid g2"><div class="panel"><h2 style="margin-bottom:6px">Top searches</h2><div class="tbl"><table><tr><th>Search</th><th style="text-align:right">Clicks</th><th style="text-align:right">Shown</th><th style="text-align:right">Position</th></tr>' + g.queries.slice(0, 20).map(function (q) { return '<tr><td>' + esc(q.query) + '</td><td class="mono" style="text-align:right">' + q.clicks + '</td><td class="mono" style="text-align:right">' + q.impressions + '</td><td class="mono" style="text-align:right">' + q.position.toFixed(1) + '</td></tr>'; }).join('') + '</table></div></div>' +
+      '<div class="panel"><h2 style="margin-bottom:6px">Top pages</h2><div class="tbl"><table><tr><th>Page</th><th style="text-align:right">Clicks</th><th style="text-align:right">Shown</th><th style="text-align:right">Position</th></tr>' + g.pages.slice(0, 20).map(function (p) { return '<tr><td style="word-break:break-all">' + esc(p.page.replace(/^https?:\/\/[^/]+/, '') || '/') + '</td><td class="mono" style="text-align:right">' + p.clicks + '</td><td class="mono" style="text-align:right">' + p.impressions + '</td><td class="mono" style="text-align:right">' + p.position.toFixed(1) + '</td></tr>'; }).join('') + '</table></div></div></div>';
+  }
+  function rankingsTab() {
+    var g = S.web.gsc;
+    if (!g) { loadGsc(); return '<p class="meta">Checking Search Console…</p>'; }
+    var note = '<p class="meta">Rankings come from Google Search Console, which reports your real average Google position for each search. Ubersuggest has no public data connection, so it can’t feed the CRM directly.</p>';
+    if (!g.connected) return note + gscSetup(g.error);
+    var pages = {};
+    g.pageQueries.forEach(function (r) { var p = r.page.replace(/^https?:\/\/[^/]+/, '') || '/'; var x = pages[p] = pages[p] || { page: p, imp: 0, clicks: 0, wpos: 0, top: null }; x.imp += r.impressions; x.clicks += r.clicks; x.wpos += r.position * r.impressions; if (!x.top || r.impressions > x.top.impressions) x.top = r; });
+    var list = Object.keys(pages).map(function (k) { var x = pages[k]; x.pos = x.imp ? x.wpos / x.imp : 0; return x; });
+    var action = function (x) { if (x.pos <= 3) return ['Strong: keep it up to date', 'p-green']; if (x.pos <= 10) return ['Page 1: improve the title and description to win more clicks', 'p-blue']; if (x.pos <= 20) return ['Page 2: add content and links from related pages to reach page 1', 'p-amber']; return ['Deep: needs much more content on “' + x.top.query + '”', 'p-red']; };
+    var opp = list.filter(function (x) { return x.pos > 3 && x.pos <= 20; }).sort(function (a, b) { return b.imp - a.imp; });
+    return note + '<div class="panel"><div class="hd"><h2>Best opportunities</h2><span class="meta">Pages in positions 4–20 with the most searches: small improvements move these onto page 1 or into the top 3</span></div><div class="tbl"><table><tr><th>Page</th><th>Main search</th><th style="text-align:right">Position</th><th style="text-align:right">Shown</th><th style="text-align:right">Clicks</th><th>What to do</th></tr>' +
+      (opp.concat(list.filter(function (x) { return opp.indexOf(x) < 0; }).sort(function (a, b) { return b.imp - a.imp; })).slice(0, 40).map(function (x) { var a = action(x); return '<tr class="click" data-opt="' + esc(x.page) + '"><td style="word-break:break-all"><b>' + esc(x.page) + '</b></td><td>' + esc(x.top.query) + '</td><td class="mono" style="text-align:right">' + x.pos.toFixed(1) + '</td><td class="mono" style="text-align:right">' + x.imp + '</td><td class="mono" style="text-align:right">' + x.clicks + '</td><td>' + pill(a[0], a[1]) + '</td></tr>'; }).join('') || '<tr><td colspan="6">' + empty('No ranking data yet.') + '</td></tr>') + '</table></div></div>';
+  }
+
+  /* ----- Page optimiser: checks the live pages from the sitemap ----- */
+  async function runAudit() {
+    if (S.web.auditing) return; S.web.auditing = true; S.web.audit = []; S.web.auditDone = 0;
+    try {
+      var xml = await (await fetch('/sitemap.xml', { cache: 'no-store' })).text();
+      var paths = Array.from(xml.matchAll(/<loc>([^<]+)<\/loc>/g)).map(function (m) { try { return new URL(m[1]).pathname; } catch (e) { return null; } }).filter(Boolean);
+      S.web.auditTotal = paths.length;
+      var queue = paths.slice(), out = [];
+      var worker = async function () {
+        while (queue.length) {
+          var p = queue.shift();
+          try {
+            var html = await (await fetch(p, { cache: 'no-store' })).text();
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            var main = doc.querySelector('main') || doc.body;
+            main.querySelectorAll('script,style,noscript').forEach(function (n) { n.remove(); });
+            var words = (main.textContent || '').split(/\s+/).filter(function (w) { return /\p{L}/u.test(w); }).length;
+            var links = Array.from(new Set(Array.from(main.querySelectorAll('a[href^="/"]')).map(function (a) { return a.getAttribute('href').split('#')[0]; }))).length;
+            var imgs = Array.from(doc.querySelectorAll('img')), noalt = imgs.filter(function (i) { return !(i.getAttribute('alt') || '').trim(); }).length;
+            var desc = (doc.querySelector('meta[name="description"]') || {}).content || '';
+            var canon = (doc.querySelector('link[rel="canonical"]') || {}).href || '';
+            out.push({ path: p, title: doc.title || '', desc: desc, h1: doc.querySelectorAll('h1').length, h1t: ((doc.querySelector('h1') || {}).textContent || '').trim(), words: words, links: links, imgs: imgs.length, noalt: noalt, schema: !!doc.querySelector('script[type="application/ld+json"]') || /application\/ld\+json/.test(html), canon: canon, og: !!doc.querySelector('meta[property="og:title"]'), noindex: /noindex/i.test((doc.querySelector('meta[name="robots"]') || {}).content || '') });
+          } catch (e) { out.push({ path: p, error: String(e.message || e) }); }
+          S.web.auditDone++; if (S.web.auditDone % 5 === 0 && onView('website')) { S.web.audit = out.slice(); render(); }
+        }
+      };
+      await Promise.all([worker(), worker(), worker(), worker()]);
+      S.web.audit = out;
+    } catch (e) { S.web.audit = [{ path: 'sitemap', error: String(e.message || e) }]; }
+    S.web.auditing = false; S.web.auditAt = new Date(); if (onView('website')) render();
+  }
+  function auditChecks(p) {
+    var deep = /^\/(labour-lawyers\/|services\/|insights\/)/.test(p.path), target = deep ? 800 : 300;
+    return { target: target, checks: [
+      ['Title is 30–60 characters', p.title.length >= 30 && p.title.length <= 60, p.title.length + ' characters', 'Rewrite the title to 30–60 characters, with the main search phrase near the start.'],
+      ['Meta description is 120–160 characters', p.desc.length >= 120 && p.desc.length <= 160, p.desc.length + ' characters', 'Write a 120–160 character description that says what the page offers and invites a call.'],
+      ['Exactly one H1 heading', p.h1 === 1, p.h1 + ' found', 'Use one H1 that matches the page’s main topic.'],
+      ['At least ' + target + ' words of content', p.words >= target, p.words + ' words', 'Add about ' + Math.max(0, target - p.words) + ' words: the steps in the process, time limits, costs and a short FAQ.'],
+      ['At least 5 internal links in the content', p.links >= 5, p.links + ' links', 'Link to related services, locations and articles from the body text.'],
+      ['Every image has alt text', p.noalt === 0, p.imgs ? (p.imgs - p.noalt) + ' of ' + p.imgs : 'No images', 'Describe each image in its alt text.'],
+      ['Structured data (schema.org)', p.schema, p.schema ? 'Present' : 'Missing', 'Add LegalService or Article structured data.'],
+      ['Canonical tag', !!p.canon, p.canon ? 'Present' : 'Missing', 'Add a canonical link to the page’s own address.'],
+      ['Social sharing tags (Open Graph)', p.og, p.og ? 'Present' : 'Missing', 'Add og:title, og:description and og:image.'],
+      ['Visible to search engines', !p.noindex, p.noindex ? 'noindex set' : 'Indexable', 'Remove the noindex robots tag.']
+    ] };
+  }
+  function optimiserTab() {
+    if (!S.web.audit && !S.web.auditing) runAudit();
+    var a = (S.web.audit || []).filter(function (p) { return !p.error; }).map(function (p) { var c = auditChecks(p); p._c = c; p._score = Math.round(c.checks.filter(function (x) { return x[1]; }).length / c.checks.length * 100); return p; }).sort(function (x, y) { return x._score - y._score || x.words - y.words; });
+    var errs = (S.web.audit || []).filter(function (p) { return p.error; });
+    var sel = a.find(function (p) { return p.path === S.ui.optPage; }) || a[0];
+    var avg = a.length ? Math.round(a.reduce(function (s, p) { return s + p._score; }, 0) / a.length) : 0;
+    var col = function (s) { return s >= 90 ? 'green' : s >= 70 ? 'amber' : 'red'; };
+    return '<div class="banner"><span class="led"></span><b>' + (S.web.auditing ? 'Checking pages… ' + S.web.auditDone + ' of ' + (S.web.auditTotal || '?') : 'Checked ' + a.length + ' live pages') + '</b><span class="meta">' + (S.web.auditAt ? 'at ' + fmtT(S.web.auditAt) : '') + '</span><button class="btn sm" data-act="rerun-audit" style="margin-left:auto"' + (S.web.auditing ? ' disabled' : '') + '>Check again</button></div>' +
+      (errs.length ? '<div class="callout p-red">Could not check: ' + errs.map(function (e) { return esc(e.path); }).join(', ') + '</div>' : '') +
+      (a.length ? '<div class="grid g4"><div class="panel stat"><b style="color:var(--' + col(avg) + ')">' + avg + '</b><span>Average score out of 100</span></div><div class="panel stat"><b>' + a.filter(function (p) { return p._score >= 90; }).length + '</b><span>Pages scoring 90+</span></div><div class="panel stat"><b>' + a.filter(function (p) { return !p._c.checks[3][1]; }).length + '</b><span>Pages with too little content</span></div><div class="panel stat"><b>' + a.filter(function (p) { return !p._c.checks[0][1] || !p._c.checks[1][1]; }).length + '</b><span>Titles or descriptions to fix</span></div></div>' : '') +
+      (sel ? '<div class="grid g21"><div class="panel"><div class="hd"><div style="min-width:0"><div class="eyebrow">Checking</div><h2 style="word-break:break-all">' + esc(sel.path) + '</h2></div><div style="text-align:right"><div style="font-family:var(--display);font-size:26px;font-weight:700;color:var(--' + col(sel._score) + ')">' + sel._score + '/100</div><a class="meta" href="' + esc(sel.path) + '" target="_blank" rel="noopener">Open page</a></div></div>' +
+        '<dl class="kv" style="margin-bottom:12px"><dt>Title</dt><dd>' + esc(sel.title) + '</dd><dt>Description</dt><dd>' + esc(sel.desc) + '</dd><dt>H1</dt><dd>' + esc(sel.h1t) + '</dd></dl><div class="list">' +
+        sel._c.checks.map(function (c) { return '<div class="row" style="align-items:flex-start;padding:7px 0">' + pill(c[1] ? 'Pass' : 'Fix', c[1] ? 'p-green' : 'p-amber') + '<div class="grow">' + c[0] + (c[1] ? '' : '<div class="meta">' + c[3] + '</div>') + '</div><span class="mono">' + c[2] + '</span></div>'; }).join('') + '</div></div>' +
+        '<div class="panel"><div class="hd"><h2>All pages</h2><span class="meta">Lowest score first</span></div><div class="list" style="max-height:640px;overflow:auto">' + a.map(function (p) { return '<button class="row" data-opt="' + esc(p.path) + '" style="border:0;border-bottom:1px solid var(--line);background:' + (p === sel ? 'var(--soft)' : 'none') + ';text-align:left;cursor:pointer;width:100%;align-items:center"><span class="grow" style="word-break:break-all">' + esc(p.path) + '<span class="meta" style="display:block">' + p.words + ' words</span></span>' + pill(String(p._score), 'p-' + col(p._score)) + '</button>'; }).join('') + '</div></div></div>' : '');
+  }
+  P2['rerun-audit'] = function () { S.web.audit = null; runAudit(); render(); };
+
+  V.website = function () {
+    var tab = S.ui.wTab || 'Visitors';
+    var tabs = ['Visitors', 'Lead sources', 'Search Console', 'Rankings', 'Page optimiser'];
+    var body = tab === 'Visitors' ? visitorsTab() : tab === 'Lead sources' ? sourcesTab() : tab === 'Search Console' ? gscTab() : tab === 'Rankings' ? rankingsTab() : optimiserTab();
+    return head('Website', 'labourlawalliance.co.za', 'Who visits the site, how they find it, where enquiries come from, and which pages need work.', '<a class="btn" href="https://labourlawalliance.co.za" target="_blank" rel="noopener">Open website</a>') +
+      '<div class="subtabs">' + tabs.map(function (x) { return '<button data-wtab="' + x + '" class="' + (x === tab ? 'on' : '') + '">' + x + '</button>'; }).join('') + '</div>' + body;
+  };
+
+  /* ----- Domain email (from /api/mail) ----- */
+  function mailBanner() {
+    var m = S.mail;
+    if (m.state === 'idle') { loadMail(); return '<span class="led off" style="margin-left:12px"></span><b>info@ mailbox</b><span class="meta">Checking…</span>'; }
+    if (m.state === 'unconfigured') return '<span class="led off" style="margin-left:12px"></span><b>info@ mailbox</b><span class="meta">Not connected yet · <a href="#settings" data-stab="Email">Connect</a></span>';
+    if (m.state === 'error') return '<span class="led off" style="margin-left:12px;background:var(--red)"></span><b>info@ mailbox</b><span class="meta">' + esc(m.error) + '</span>';
+    if (m.state === 'loading') return '<span class="led off" style="margin-left:12px"></span><b>info@ mailbox</b><span class="meta">Syncing…</span>';
+    return '<span class="led" style="margin-left:12px"></span><b>' + esc(m.user || 'info@') + '</b><span class="meta">Synced ' + (m.at ? fmtT(m.at) : '') + ' · ' + m.list.filter(function (x) { return !x.seen; }).length + ' unread</span>';
+  }
+  async function loadMail() {
+    if (S.mail.state === 'loading') return; S.mail.state = 'loading';
+    var j = await api('/api/mail?action=list&limit=50');
+    if (j.configured === false) S.mail.state = 'unconfigured';
+    else if (j.error || j.ok === false) { S.mail.state = 'error'; S.mail.error = j.error || 'Could not read the mailbox.'; }
+    else { S.mail.state = 'ok'; S.mail.list = j.messages || []; S.mail.user = j.user; S.mail.at = new Date(); }
+    if (onView('inbox') || onView('settings')) render();
+  }
+  function who(a) { a = a && a[0]; return a ? (a.name || a.address) : '—'; }
+  function mailView() {
+    var m = S.mail;
+    if (m.state === 'idle' || m.state === 'loading') { if (m.state === 'idle') loadMail(); return '<div class="panel"><p class="meta">Loading the mailbox…</p></div>'; }
+    if (m.state === 'unconfigured') return '<div class="panel">' + mailSetup() + '</div>';
+    if (m.state === 'error') return '<div class="callout p-red">' + esc(m.error) + ' <button class="btn sm" data-act="mail-refresh">Try again</button></div>';
+    var msg = m.msg;
+    var reader = !m.sel ? empty('Choose an email on the left.') : !msg ? '<p class="meta">Opening…</p>' : msg.error ? '<div class="callout p-red">' + esc(msg.error) + '</div>' :
+      '<div style="display:flex;flex-direction:column;gap:10px"><div><div class="meta">' + fmtDT(msg.date) + '</div><h2 style="margin-top:4px">' + esc(msg.subject) + '</h2><div class="meta">From <b>' + esc(who(msg.from)) + '</b> &lt;' + esc((msg.from[0] || {}).address || '') + '&gt;' + (msg.to.length ? ' · to ' + esc(msg.to.map(function (x) { return x.address; }).join(', ')) : '') + '</div></div>' +
+      (msg.html ? '<iframe sandbox="" referrerpolicy="no-referrer" id="mail-frame" style="width:100%;height:420px;border:1px solid var(--line);border-radius:8px;background:#fff" title="Email"></iframe>' : '<div style="white-space:pre-wrap;border:1px solid var(--line);border-radius:8px;padding:12px;max-height:420px;overflow:auto">' + esc(msg.text) + '</div>') +
+      (msg.attachments.length ? '<div class="meta">Attachments (open them in Outlook): ' + msg.attachments.map(function (a) { return esc(a.filename); }).join(', ') + '</div>' : '') +
+      '<form id="reply-form" class="f" style="grid-template-columns:1fr"><div class="fld"><label for="reply-body">Reply to ' + esc((msg.from[0] || {}).address || '') + '</label><textarea id="reply-body" placeholder="Write your reply…"></textarea></div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn pri" type="submit">Send reply</button><button class="btn" type="button" data-act="mail-to-lead">Add sender to pipeline</button><span class="msg" id="reply-msg"></span></div></form></div>';
+    return '<div class="banner">' + mailBanner() + '<button class="btn sm" data-act="mail-refresh" style="margin-left:auto">Refresh</button></div>' +
+      '<div class="panel inbox"><div class="ilist">' + (m.list.map(function (x) { return '<button class="imsg' + (x.seen ? '' : ' unread') + (m.sel === x.uid ? ' on' : '') + '" data-act="mail-open" data-uid="' + x.uid + '"><span class="dot"></span><span style="flex:1;min-width:0"><span style="display:flex;justify-content:space-between;gap:8px"><b>' + esc(who(x.from)) + '</b><span class="mono">' + fmt(x.date) + '</span></span><span style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.subject) + '</span></span></button>'; }).join('') || empty('The inbox is empty.')) + '</div><div class="iread">' + reader + '</div></div>';
+  }
+  function mailSetup() {
+    return '<h2 style="margin-bottom:8px">Connect the info@ mailbox</h2><p class="sub" style="margin-bottom:10px">Once connected, email to info@labourlawalliance.co.za shows in the CRM inbox, and replies you send from the CRM also appear in Outlook’s Sent folder.</p><ol style="margin:0;padding-left:20px;line-height:1.8">' +
+      '<li>In <a href="https://vercel.com/" target="_blank" rel="noopener">Vercel</a> → project <b>labour</b> → <b>Settings → Environment Variables</b>, add <code>MAIL_USER</code> with the value <code>info@labourlawalliance.co.za</code>.</li>' +
+      '<li>Add <code>MAIL_PASS</code> with the mailbox password (the one Outlook uses). Mark it <b>Sensitive</b>.</li>' +
+      '<li>Save, then redeploy (Deployments → ⋯ → Redeploy). Come back here and click Refresh.</li></ol><p class="meta" style="margin-top:10px">The CRM reads mail from your Afrihost server (thragg.aserv.co.za, secure port 993). The password stays in Vercel; the CRM page never sees it.</p>';
+  }
+  P2['mail-refresh'] = function () { S.mail.state = 'idle'; S.mail.msg = null; render(); };
+  P2['mail-open'] = async function (el) {
+    var uid = Number(el.dataset.uid); S.mail.sel = uid; S.mail.msg = null; render();
+    var j = await api('/api/mail?action=read&uid=' + uid);
+    if (S.mail.sel !== uid) return;
+    S.mail.msg = j.error ? { error: j.error } : j; var it = S.mail.list.find(function (x) { return x.uid === uid; }); if (it) it.seen = true; render();
+  };
+  P2['mail-to-lead'] = function () {
+    var msg = S.mail.msg; if (!msg) return; var f = msg.from[0] || {}; var parts = (f.name || '').split(' ');
+    openForm({ title: 'Add to pipeline', fields: [{ k: 'first_name', label: 'First name', req: true }, { k: 'last_name', label: 'Last name' }, { k: 'email', label: 'Email', type: 'email' }, { k: 'phone', label: 'Phone', type: 'tel' }, { k: 'service', label: 'What it is about', type: 'select', blank: 'Choose…', options: DISPUTES }, { k: 'message', label: 'Notes', type: 'textarea', full: true }],
+      values: { first_name: parts[0] || f.address, last_name: parts.slice(1).join(' '), email: f.address, message: msg.subject + '\n\n' + (msg.text || '').slice(0, 1500) },
+      save: async function (d) { d.form = 'contact'; d.status = 'new'; d.source = 'Email'; d.subject = msg.subject.slice(0, 200); d.ref = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()); d.seen_at = new Date().toISOString(); var r = await sb.from('leads').insert(d).select().single(); if (r.error) return dbErr(r); upsertLocal(S.leads, r.data); toast('Added to the pipeline'); render(); } });
+  };
+
+  /* ----- Settings: Email and Integrations ----- */
+  async function dnsCheck() {
+    var q = function (name, type) { return fetch('https://dns.google/resolve?name=' + encodeURIComponent(name) + '&type=' + type).then(function (r) { return r.json(); }).then(function (j) { return (j.Answer || []).map(function (a) { return a.data.replace(/^"|"$/g, '').replace(/" "/g, ''); }); }).catch(function () { return null; }); };
+    var res = await Promise.all([q('labourlawalliance.co.za', 'MX'), q('labourlawalliance.co.za', 'TXT'), q('_dmarc.labourlawalliance.co.za', 'TXT'), q('resend._domainkey.labourlawalliance.co.za', 'TXT'), q('send.labourlawalliance.co.za', 'TXT')]);
+    var spf = (res[1] || []).find(function (t) { return /^v=spf1/.test(t); });
+    S.dns = [
+      ['Incoming mail (MX) goes to the Afrihost spam filter', !!(res[0] || []).join(' ').match(/ucebox|aserv/i), (res[0] || []).join(', ') || 'none found'],
+      ['SPF record allows Afrihost to send', !!spf, spf || 'none found'],
+      ['Resend can send for the domain (SPF on send.)', (res[4] || []).some(function (t) { return /amazonses|spf/.test(t); }), (res[4] || []).join(' ') || 'none found'],
+      ['Resend DKIM signing key published', (res[3] || []).some(function (t) { return /p=/.test(t); }), (res[3] || []).length ? 'Present' : 'none found'],
+      ['DMARC policy published', (res[2] || []).some(function (t) { return /v=DMARC1/i.test(t); }), (res[2] || []).join(' ') || 'none found']
+    ];
+    if (onView('settings')) render();
+  }
+  function settings3(tab) {
+    if (tab === 'Email') {
+      if (S.mail.state === 'idle') loadMail();
+      if (!S.dns) { S.dns = 'loading'; dnsCheck(); }
+      var st = S.mail.state;
+      return '<div class="panel"><div class="hd"><h2>Domain mailboxes</h2><button class="btn sm" data-act="mail-refresh">Check again</button></div><div class="tbl"><table><tr><th>Address</th><th>Used for</th><th>Connection</th><th>Status</th></tr>' +
+        '<tr><td><b>' + esc(S.mail.user || 'info@labourlawalliance.co.za') + '</b></td><td>Main inbox: client email and copies of website forms</td><td>IMAP, thragg.aserv.co.za</td><td>' + (st === 'ok' ? pill('Connected', 'p-green') + '<div class="meta">' + S.mail.list.length + ' recent emails · synced ' + fmtT(S.mail.at) + '</div>' : st === 'unconfigured' ? pill('Not connected', 'p-amber') : st === 'error' ? pill('Problem', 'p-red') + '<div class="meta">' + esc(S.mail.error) + '</div>' : pill('Checking…')) + '</td></tr>' +
+        '<tr><td><b>website@labourlawalliance.co.za</b></td><td>Sends website form emails, quotes, invoices and CRM sign-in links</td><td>Resend</td><td>' + pill('Connected', 'p-green') + '</td></tr></table></div></div>' +
+        (st === 'unconfigured' || st === 'error' ? '<div class="panel">' + mailSetup() + '</div>' : '') +
+        '<div class="panel"><div class="hd"><h2>Email health</h2><span class="meta">Live check of your domain’s email records</span></div><div class="list">' + (Array.isArray(S.dns) ? S.dns.map(function (d) { return '<div class="row" style="align-items:center">' + pill(d[1] ? 'OK' : 'Check', d[1] ? 'p-green' : 'p-amber') + '<div class="grow">' + d[0] + '<div class="meta" style="word-break:break-all">' + esc(d[2]) + '</div></div></div>'; }).join('') : '<p class="meta">Checking…</p>') + '</div>' +
+        '<p class="meta" style="margin-top:8px">Afrihost’s spam filter must deliver to thragg.aserv.co.za, not to the domain name (which now points at the website). That was fixed on 28 November 2026.</p></div>';
+    }
+    if (!S.web.gsc) loadGsc();
+    if (S.mail.state === 'idle') loadMail();
+    var g = S.web.gsc, tracked = S.web.views && !S.web.views.error ? S.web.views.length : null;
+    if (S.web.views == null) loadViews();
+    var row = function (name, what, state, note, link) { return '<div class="panel"><div class="hd"><h2>' + name + '</h2>' + (state === 'ok' ? pill('Connected', 'p-green') : state === 'wait' ? pill('Checking…') : state === 'warn' ? pill('Needs attention', 'p-red') : pill('Not connected', 'p-amber')) + '</div><p class="meta" style="margin:0 0 8px">' + what + '</p><div class="meta">' + note + '</div>' + (link || '') + '</div>'; };
+    return '<div class="grid g2">' +
+      row('Website visitor counting', 'Counts visits, pages, sources, devices and cities for the Website tab. No cookies or IP addresses.', 'ok', tracked == null ? 'Loading…' : tracked + ' page views in the last ' + S.web.days + ' days.') +
+      row('Google Search Console', 'Searches, clicks, impressions and real Google positions for the Website tab.', !g ? 'wait' : g.connected ? 'ok' : g.error ? 'warn' : 'off', !g ? '' : g.connected ? 'Reading as ' + esc(g.account) : g.error ? esc(g.error) : 'Add a Google service account key to connect.', g && !g.connected ? '<div style="margin-top:8px"><button class="btn sm" data-wtab="Search Console" data-goweb="1">How to connect</button></div>' : '') +
+      row('info@ mailbox', 'Shows domain email in the CRM inbox and files CRM replies in Sent.', S.mail.state === 'ok' ? 'ok' : S.mail.state === 'error' ? 'warn' : S.mail.state === 'unconfigured' ? 'off' : 'wait', S.mail.state === 'ok' ? 'Reading ' + esc(S.mail.user) : S.mail.state === 'error' ? esc(S.mail.error) : 'Add the mailbox password in Vercel to connect.', S.mail.state !== 'ok' ? '<div style="margin-top:8px"><button class="btn sm" data-stab="Email">How to connect</button></div>' : '') +
+      row('Resend', 'Sends website form emails, quotes, invoices, reminders, replies and sign-in links from the domain.', 'ok', 'Domain labourlawalliance.co.za verified.') +
+      row('Supabase', 'The CRM database, private document storage and staff sign-in.', 'ok', 'Project labour-law-alliance (London).') +
+      row('SEO platform (Ubersuggest, Semrush, Ahrefs)', 'Keyword volumes and competitor research.', 'off', 'Ubersuggest has no public data connection. The Rankings tab uses Google’s own position data from Search Console instead. Semrush or Ahrefs can be added later with a paid API plan.') +
+      row('WhatsApp Business', 'Log WhatsApp enquiries on 068 008 9790 automatically.', 'off', 'Needs the WhatsApp Business Platform (Meta). Until then, add WhatsApp enquiries with “New enquiry” and choose WhatsApp as the source.') +
+      row('Calendar (Outlook or Google)', 'Two-way sync of CRM appointments.', 'off', 'Not set up. Appointments live in the CRM for now.') +
+      '</div>';
+  }
+
+  function bind3() {
+    var f = $('mail-frame'); if (f && S.mail.msg && S.mail.msg.html) f.srcdoc = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src https: data: cid:; style-src \'unsafe-inline\'; font-src https:">' + S.mail.msg.html;
+    var rf = $('reply-form');
+    if (rf) rf.onsubmit = async function (e) {
+      e.preventDefault(); var msg = S.mail.msg, body = $('reply-body').value.trim(); if (!body) return;
+      var btn = rf.querySelector('button[type=submit]'); btn.disabled = true; $('reply-msg').className = 'msg'; $('reply-msg').textContent = 'Sending…';
+      var quoted = '\n\n---\nOn ' + fmtDT(msg.date) + ', ' + who(msg.from) + ' wrote:\n' + (msg.text || '').split('\n').slice(0, 40).map(function (l) { return '> ' + l; }).join('\n');
+      var j = await api('/api/mail', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'send', to: (msg.from[0] || {}).address, subject: /^re:/i.test(msg.subject) ? msg.subject : 'Re: ' + msg.subject, text: body + quoted, inReplyTo: msg.messageId, references: msg.references }) });
+      btn.disabled = false;
+      if (j.error) { $('reply-msg').textContent = j.error; return; }
+      $('reply-body').value = ''; $('reply-msg').className = 'msg ok'; $('reply-msg').textContent = 'Sent'; toast('Reply sent');
+    };
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-wtab],[data-opt]'); if (!b) return;
+    if (b.dataset.wtab) { S.ui.wTab = b.dataset.wtab; if (b.dataset.goweb) { location.hash = 'website'; return; } }
+    if (b.dataset.opt) { S.ui.optPage = b.dataset.opt; S.ui.wTab = 'Page optimiser'; }
+    render(); window.scrollTo(0, 0);
+  });
+  document.addEventListener('click', function (e) { var b = e.target.closest('a[data-stab]'); if (b) { S.ui.sTab = b.dataset.stab; } });
+
   /* ---------- Router ---------- */
   function current() { var h = location.hash.slice(1); if (h.indexOf('matter=') === 0) return 'matters'; if (h.indexOf('lead=') === 0) return 'inbox'; return V[h] ? h : 'dashboard'; }
   function render() {
@@ -1024,7 +1324,7 @@
     var cr = $('c-rule'); if (cr) { var cu = function () { var r = rule(cr.value); $('c-l').textContent = r.from; var dv = $('c-date').value; if (!dv) return; var due = r.calc(D(dv)), n = daysLeft(due); $('c-out').innerHTML = '<b>' + fmt(due) + '</b> · ' + (n < 0 ? Math.abs(n) + ' days ago' : n + ' days from today') + '<br><span class="meta">' + r.span + ', ' + r.law + '</span>'; }; cr.onchange = cu; $('c-date').oninput = cu; cu(); }
     var dlf = $('dl-form'); if (dlf) dlf.onsubmit = async function (e) { e.preventDefault(); var t = $('dl-title').value.trim(), d = $('dl-date').value; if (!t || !d) { toast('Add a description and a date'); return; } var mid = location.hash.slice(8); var r = await sb.from('deadlines').insert({ matter_id: mid, title: t, due_date: d }).select().single(); if (r.error) { toast(r.error.message); return; } S.deadlines.push(r.data); S.deadlines.sort(function (a, b) { return a.due_date < b.due_date ? -1 : 1; }); toast('Deadline added'); render(); };
     var nf = $('note-form'); if (nf) nf.onsubmit = async function (e) { e.preventDefault(); var b = $('note-body').value.trim(); if (!b) return; var mid = location.hash.slice(8); var r = await sb.from('matter_notes').insert({ matter_id: mid, body: b }).select().single(); if (r.error) { toast(r.error.message); return; } (S.notes[mid] = S.notes[mid] || []).unshift(r.data); toast('Note saved'); render(); };
-    bind2();
+    bind2(); bind3();
     // Pipeline drag and drop
     v.querySelectorAll('[data-drag]').forEach(function (c) { c.addEventListener('dragstart', function (e) { e.dataTransfer.setData('text/plain', c.dataset.drag); }); });
     v.querySelectorAll('[data-drop]').forEach(function (col) {
